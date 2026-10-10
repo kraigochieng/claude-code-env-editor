@@ -1,6 +1,53 @@
 # CHANGELOG
 
 
+## v0.3.2 (2026-10-10)
+
+### Bug Fixes
+
+- **verify**: Skip the key check when a claude login is used
+  ([`a0c2aea`](https://github.com/kraigochieng/claude-code-env-editor/commit/a0c2aeacc77def7da3412652f0b6c943afd32a57))
+
+Without a key, verify no longer fails on the Anthropic API. It skips the key check and says whether
+  a login was found. A local endpoint gets an unauthenticated request. A remote custom endpoint
+  still fails. The tool checks only that the oauthAccount key exists. It never reads the login data.
+
+Closes #26
+
+### Continuous Integration
+
+- Lint with ruff
+  ([`f7f56d2`](https://github.com/kraigochieng/claude-code-env-editor/commit/f7f56d29c98365ea4c53e30fcd487bab6a509723))
+
+Check unused names, import order, and function types in CI.
+
+Closes #21
+
+### Documentation
+
+- Add screenshots of the tui pages to the readme
+  ([`ba40388`](https://github.com/kraigochieng/claude-code-env-editor/commit/ba40388066e5c469d731b7419a01d055bb71d453))
+
+Closes #24
+
+### Refactoring
+
+- Add a type hint to every variable in src
+  ([`fbf5b58`](https://github.com/kraigochieng/claude-code-env-editor/commit/fbf5b58f3274caf621c1bde87df8134f7d48765d))
+
+Module constants use Final. Pydantic model_config and the Textual BINDINGS use ClassVar. Imports are
+  sorted and unused ones are removed.
+
+Refs #19
+
+### Testing
+
+- Add a type hint to every variable in tests
+  ([`5a300ee`](https://github.com/kraigochieng/claude-code-env-editor/commit/5a300ee89f775a9da3f8916e0ab2979c9e88f837))
+
+Closes #19
+
+
 ## v0.3.1 (2026-10-10)
 
 ### Bug Fixes
