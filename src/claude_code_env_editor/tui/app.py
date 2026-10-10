@@ -148,7 +148,7 @@ class EnvEditorApp(App[None]):
         Binding(key="p", action="preset", description="preset"),
         Binding(key="d", action="switch_dir", description="dir"),
         Binding(key="x", action="remove", description="remove"),
-        Binding(key="question_mark", action="help", description="? help"),
+        Binding(key="question_mark", action="help", description="help"),
         Binding(key="q", action="quit", description="quit"),
     ]
 
