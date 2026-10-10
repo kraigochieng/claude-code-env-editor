@@ -162,3 +162,96 @@ def test_profile_delete_needs_yes_without_a_terminal(
     assert run(["profile", "save", "mine", "--from", "deepseek"], tmp_path, monkeypatch) == 0
     assert run(["profile", "delete", "mine"], tmp_path, monkeypatch) == 1
     assert run(["profile", "delete", "deepseek", "--yes"], tmp_path, monkeypatch) == 2
+
+
+DEEPSEEK_SETTINGS: dict[str, dict[str, str]] = {
+    "env": {
+        "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+        "ANTHROPIC_AUTH_TOKEN": "sk-deepseek-0123456789",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-flash",
+        "CLAUDE_CODE_MY_FLAG": "1",
+    }
+}
+
+
+def test_profile_apply_replaces_stale_values_and_keeps_custom_ones(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    assert run(["profile", "apply", "openrouter", "--yes"], tmp_path, monkeypatch) == 0
+    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
+    assert env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
+    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    assert env["CLAUDE_CODE_MY_FLAG"] == "1"
+    out: str = capsys.readouterr().out
+    assert "remove" in out and "0123456789" not in out and "the key was removed" in out
+    assert (tmp_path / "settings.json.bak").exists()
+
+
+def test_profile_apply_dry_run_writes_nothing(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    before: str = (tmp_path / "settings.json").read_text()
+    assert run(["profile", "apply", "openrouter", "--dry-run"], tmp_path, monkeypatch) == 0
+    assert (tmp_path / "settings.json").read_text() == before
+    assert "Nothing written (--dry-run)." in capsys.readouterr().out
+
+
+def test_profile_apply_without_yes_and_without_a_terminal_writes_nothing(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    before: str = (tmp_path / "settings.json").read_text()
+    assert run(["profile", "apply", "openrouter"], tmp_path, monkeypatch) == 1
+    assert (tmp_path / "settings.json").read_text() == before
+
+
+def test_profile_apply_merge_keeps_unlisted_variables(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    assert run(["profile", "apply", "openrouter", "--merge", "--yes"], tmp_path, monkeypatch) == 0
+    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
+    assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "deepseek-flash" and "ANTHROPIC_AUTH_TOKEN" in env
+
+
+def test_profile_apply_to_a_file_works_and_refuses_a_key_in_a_shared_file(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    shared: Path = tmp_path / "proj" / ".claude" / "settings.json"
+    local: Path = tmp_path / "proj" / ".claude" / "settings.local.json"
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    assert cli.main(["profile", "save", "keyed", "--config-dir", str(tmp_path)]) == 0
+    assert cli.main(["profile", "apply", "keyed", "--yes", "--file", str(shared)]) == 2
+    assert not shared.exists()
+    assert cli.main(["profile", "apply", "keyed", "--yes", "--file", str(local)]) == 0
+    assert json.loads(local.read_text())["env"]["ANTHROPIC_AUTH_TOKEN"] == "sk-deepseek-0123456789"
+    assert cli.main(["profile", "apply", "keyed", "--yes", "--allow-secret-in-shared-file", "--file", str(shared)]) == 0
+    assert shared.exists()
+
+
+def test_profile_apply_unknown_profile_is_an_error(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run(["profile", "apply", "nope", "--yes"], tmp_path, monkeypatch) == 1
+
+
+def test_config_dir_and_file_exclude_each_other(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["show", "--config-dir", str(tmp_path), "--file", str(tmp_path / "s.json")])
+    assert exc.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err
+
+
+def test_preset_alias_keeps_merging_and_prints_a_tip(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
+    assert run(["preset", "openrouter"], tmp_path, monkeypatch) == 0
+    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
+    assert env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
+    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" in env  # merge keeps old values, as before
+    assert "profile apply" in capsys.readouterr().out
+    assert run(["preset", "nope"], tmp_path, monkeypatch) == 2

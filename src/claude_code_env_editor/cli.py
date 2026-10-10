@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import Final
 
 from claude_code_env_editor import __version__, config
+from claude_code_env_editor.apply import (
+    ApplyPlan,
+    Mode,
+    format_plan,
+    plan_apply,
+    secret_target_problem,
+)
 from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
     BY_NAME,
@@ -22,7 +29,7 @@ from claude_code_env_editor.envvars import (
     resolve,
     validate,
 )
-from claude_code_env_editor.presets import Preset, load_presets, preset_values
+from claude_code_env_editor.presets import Preset, load_presets
 from claude_code_env_editor.profiles import (
     Profile,
     ProfileError,
@@ -46,14 +53,22 @@ EPILOG: Final[str] = f"Run '{PROG} help <command>' for the help of one command."
 MARKS: Final[dict[str, str]] = {PASS: "ok  ", FAIL: "FAIL", SKIP: "skip"}
 
 
-def _add_dir(p: argparse.ArgumentParser) -> None:
-    """Add the --config-dir option to a command."""
-    p.add_argument(
+def _add_dir(p: argparse.ArgumentParser, allow_file: bool = True) -> None:
+    """Add --config-dir, and --file when allow_file is True, to a command. The two exclude each other."""
+    group: argparse._MutuallyExclusiveGroup = p.add_mutually_exclusive_group()
+    group.add_argument(
         "--config-dir",
         type=Path,
         metavar="PATH",
         help="Claude Code config directory (default: $CLAUDE_CONFIG_DIR, then ~/.claude).",
     )
+    if allow_file:
+        group.add_argument(
+            "--file",
+            type=Path,
+            metavar="PATH",
+            help="Any settings file to edit, for example .claude/settings.local.json of a project.",
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         return p
 
     p: argparse.ArgumentParser = add_command(name="tui", help_="Open the full-screen interface (default).", example=f"{PROG} tui --config-dir ~/.claude-work")
-    _add_dir(p=p)
+    _add_dir(p=p, allow_file=False)
 
     p = add_command(name="show", help_="Show each variable, its value, and its source.", example=f"{PROG} show --reveal")
     _add_dir(p=p)
@@ -123,18 +138,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add_command(
         name="profile",
-        help_="List, show, save, or delete profiles (named sets of variables).",
-        example=f"{PROG} profile save work-deepseek --from deepseek",
+        help_="List, show, save, apply, or delete profiles (named sets of variables).",
+        example=f"{PROG} profile apply deepseek --file .claude/settings.local.json",
     )
-    _add_dir(p)
-    p.add_argument("action", nargs="?", choices=["list", "show", "save", "delete"], default="list")
-    p.add_argument("name", nargs="?", help="Profile name for show, save, or delete.")
+    _add_dir(p=p)
+    p.add_argument("action", nargs="?", choices=["list", "show", "save", "apply", "delete"], default="list")
+    p.add_argument("name", nargs="?", help="Profile name for show, save, apply, or delete.")
     p.add_argument("--from", dest="source", metavar="PROFILE", help="With save: copy this profile (built-in or yours).")
     p.add_argument("--no-key", action="store_true", help="With save: leave the key out of the profile.")
     p.add_argument("--note", default="", help="With save: a note to store with the profile.")
     p.add_argument("--force", action="store_true", help="With save: replace a profile of the same name.")
     p.add_argument("--reveal", action="store_true", help="With show: print keys in full.")
-    p.add_argument("--yes", action="store_true", help="With delete: do not ask first.")
+    p.add_argument("--yes", action="store_true", help="With apply or delete: do not ask first.")
+    p.add_argument("--merge", action="store_true", help="With apply: change only the listed variables.")
+    p.add_argument("--dry-run", action="store_true", help="With apply: show the changes and write nothing.")
+    p.add_argument(
+        "--allow-secret-in-shared-file",
+        action="store_true",
+        help="With apply: allow a key in a file that may be committed.",
+    )
 
     p = add_command(name="help", help_="Show the help of the tool or of one command.", example=f"{PROG} help set")
     p.add_argument("topic", nargs="?", metavar="<command>")
@@ -142,7 +164,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _chosen_target(args: argparse.Namespace) -> Target:
-    """Return the target for the config directory the user chose, or for the default one."""
+    """Return the target for the file or the config directory the user chose, or for the default one."""
+    chosen_file: Path | None = getattr(args, "file", None)
+    if chosen_file is not None:
+        return Target.from_file(settings_file=chosen_file, known_dirs=config.discover_config_dirs())
     config_dir: Path = args.config_dir.expanduser() if args.config_dir else config.default_config_dir()
     return Target.from_config_dir(config_dir=config_dir)
 
@@ -156,7 +181,7 @@ def _values_in_effect(target: Target) -> dict[str, str]:
 def cmd_show(args: argparse.Namespace) -> int:
     """Print each variable with its value and source."""
     target: Target = _chosen_target(args=args)
-    print(f"config dir: {target.config_dir}")
+    print(f"settings file: {target.settings_file}")
     rows: list[Row] = visible_rows(
         rows=resolve(settings_env=config.load_env(settings_file=target.settings_file), environ=os.environ)
     )
@@ -215,15 +240,15 @@ def cmd_preset(args: argparse.Namespace) -> int:
             print(f"{pid:<12} {preset.label:<24} {preset.base_url}")
         return 0
     try:
-        values: dict[str, str] = preset_values(preset_id=args.name)
-    except KeyError as exc:
-        print(exc.args[0], file=sys.stderr)
+        preset_profile: Profile = get_profile(name=args.name)
+    except ProfileError as exc:
+        print(exc, file=sys.stderr)
         return 2
-    path: Path = config.update_env(settings_file=_chosen_target(args=args).settings_file, updates=values)
-    print(f"Applied preset '{args.name}' ({len(values)} variables) to {path}")
-    if "ANTHROPIC_AUTH_TOKEN" not in values:
-        print(f"Next: {PROG} set ANTHROPIC_AUTH_TOKEN")
-    return 0
+    code: int = _apply(
+        args=args, profile=preset_profile, mode="merge", assume_yes=True, dry_run=False, allow_shared_secret=False
+    )
+    print(f"Tip: '{PROG} profile apply {args.name}' also removes values of the previous endpoint.")
+    return code
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -281,6 +306,44 @@ def _ask_yes(question: str) -> bool:
     return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
 
 
+def _apply(
+    args: argparse.Namespace,
+    profile: Profile,
+    mode: Mode,
+    assume_yes: bool,
+    dry_run: bool,
+    allow_shared_secret: bool,
+) -> int:
+    """Show what a profile changes in the target file, ask, and write it. Return the exit code."""
+    target: Target = _chosen_target(args=args)
+    problem: str | None = secret_target_problem(profile=profile, target=target)
+    if problem and not allow_shared_secret:
+        print(f"Refused: {problem}", file=sys.stderr)
+        return 2
+    current: dict[str, str] = config.load_env(settings_file=target.settings_file)
+    plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode=mode)
+    print(f"Profile '{profile.name}' -> {target.settings_file} ({mode} mode)")
+    for line in format_plan(plan=plan):
+        print(line)
+    for warning in plan.warnings:
+        print(f"  warning: {warning}")
+    removed_key: bool = any(c.action == "remove" and BY_NAME[c.name].secret for c in plan.changes)
+    if removed_key:
+        print(f"  note: the key was removed because the endpoint changed. Next: {PROG} set ANTHROPIC_AUTH_TOKEN")
+    if not plan.writes:
+        print("Nothing to change.")
+        return 0
+    if dry_run:
+        print("Nothing written (--dry-run).")
+        return 0
+    if not assume_yes and not _ask_yes(question="Write these changes?"):
+        print("Nothing written. Use --yes to write without a question.", file=sys.stderr)
+        return 1
+    path: Path = config.update_env(settings_file=target.settings_file, updates=plan.updates())
+    print(f"Applied profile '{profile.name}' to {path}. The old file is kept as {path.name}.bak.")
+    return 0
+
+
 def cmd_profile(args: argparse.Namespace) -> int:
     """List, show, save, or delete profiles."""
     if args.action == "list":
@@ -317,6 +380,15 @@ def cmd_profile(args: argparse.Namespace) -> int:
         key_text: str = "with a key" if result.has_key else "without a key"
         print(f"Saved profile '{args.name}' ({len(result.variables)} variables, {key_text}) in {path}")
         return 0
+    if args.action == "apply":
+        return _apply(
+            args=args,
+            profile=get_profile(name=args.name),
+            mode="merge" if args.merge else "replace",
+            assume_yes=args.yes,
+            dry_run=args.dry_run,
+            allow_shared_secret=args.allow_secret_in_shared_file,
+        )
     target_profile: Profile = get_profile(name=args.name)
     if target_profile.builtin:
         print(f"'{args.name}' is a built-in profile and cannot be deleted.", file=sys.stderr)

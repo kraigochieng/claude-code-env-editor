@@ -92,6 +92,32 @@ claude-code-env-editor profile save shared --no-key # leave the key out
 claude-code-env-editor profile delete work-ds       # asks first, or use --yes
 ```
 
+### Apply a profile
+
+```sh
+claude-code-env-editor profile apply deepseek                  # to the default config directory
+claude-code-env-editor profile apply deepseek --config-dir ~/.claude-work
+claude-code-env-editor profile apply deepseek --file .claude/settings.local.json   # any settings file
+claude-code-env-editor profile apply deepseek --dry-run        # show the changes, write nothing
+```
+
+`apply` shows what it changes and asks before it writes (`--yes` skips the question).
+
+- **Replace mode (default).** It sets every variable of the profile and removes every known variable that the
+  profile does not list. So no model name or key of the previous endpoint stays behind. I tested this with Claude
+  Code: after a replace, a removed `ANTHROPIC_MODEL` is gone and Claude Code uses its default model.
+- **A key stays when the endpoint host does not change**, because it goes to the same place. A key is removed when
+  the host changes, so it never goes to another provider.
+- **`--merge`** changes only the listed variables. Old values stay. The tool warns when a key would go to a new host.
+- **Custom variables** in the `env` block are never touched.
+- **Keys in a shared file.** A profile with a key is refused for a file that may be committed, for example
+  `.claude/settings.json` of a project. Use `.claude/settings.local.json` or a config directory. The option
+  `--allow-secret-in-shared-file` overrides this.
+- The old file is kept as `settings.json.bak`, next to the settings file.
+- `preset NAME` still works. It runs `profile apply NAME --merge --yes`, as before.
+
+### Manage profiles
+
 - A name has letters, digits, `.`, `-`, and `_`. A built-in name cannot be replaced.
 - Only variables that the tool knows are allowed. A profiles file cannot set `PATH` or `LD_PRELOAD`.
 - **A profile can hold a key.** `profiles.toml` is written with mode `0600`, in a directory with mode `0700`,
