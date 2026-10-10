@@ -191,7 +191,7 @@ class EnvEditorApp(App):
             self.set_status(f"{row.name} selects the config directory. Use the d key.", error=True)
             return
 
-        def done(value: str | None) -> None:
+        def save_edited_value(value: str | None) -> None:
             if value is None:
                 return
             try:
@@ -202,7 +202,7 @@ class EnvEditorApp(App):
             self.refresh_rows(keep=row.name)
             self.set_status(f"Saved {row.name}." if value else f"Removed {row.name}.")
 
-        self.push_screen(EditScreen(row), done)
+        self.push_screen(EditScreen(row), save_edited_value)
 
     def action_remove(self) -> None:
         row = self.selected()
@@ -222,7 +222,7 @@ class EnvEditorApp(App):
         presets = load_presets()
         options = [(pid, f"{body['label']:<24} {body['ANTHROPIC_BASE_URL']}") for pid, body in presets.items()]
 
-        def done(pid: str | None) -> None:
+        def apply_chosen_preset(pid: str | None) -> None:
             if not pid:
                 return
             values = preset_values(pid)
@@ -230,7 +230,7 @@ class EnvEditorApp(App):
             self.refresh_rows()
             self.set_status(f"Applied preset '{pid}'. Set ANTHROPIC_AUTH_TOKEN next if it is empty.")
 
-        self.push_screen(PickScreen("Apply a preset", options), done)
+        self.push_screen(PickScreen("Apply a preset", options), apply_chosen_preset)
 
     def action_switch_dir(self) -> None:
         dirs = config.discover_config_dirs()
@@ -238,13 +238,13 @@ class EnvEditorApp(App):
             dirs.insert(0, self.config_dir)
         options = [(str(d), str(d)) for d in dirs]
 
-        def done(choice: str | None) -> None:
+        def use_chosen_dir(choice: str | None) -> None:
             if choice:
                 self.config_dir = Path(choice)
                 self.refresh_rows()
                 self.set_status(f"Config dir: {choice}")
 
-        self.push_screen(PickScreen("Switch config directory", options), done)
+        self.push_screen(PickScreen("Switch config directory", options), use_chosen_dir)
 
     def action_help(self) -> None:
         body = Text()
