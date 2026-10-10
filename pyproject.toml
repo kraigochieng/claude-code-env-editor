@@ -37,6 +37,8 @@ version-file = "src/claude_code_env_editor/_version.py"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not live'"
+markers = ["live: sends real requests to providers. Needs key variables. See tests/test_live.py."]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
