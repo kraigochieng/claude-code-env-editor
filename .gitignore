@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+.pytest_cache/
+src/claude_code_env_editor/_version.py
