@@ -1,6 +1,61 @@
 # CHANGELOG
 
 
+## v0.6.0 (2026-10-10)
+
+### Bug Fixes
+
+- **envvars**: Let settings.json win over the shell environment
+  ([`6048dde`](https://github.com/kraigochieng/claude-code-env-editor/commit/6048dde95641dbd3652df7330ad71670c7209f87))
+
+I tested Claude Code with a fake local server: a model in the env block overrides ANTHROPIC_MODEL
+  exported in the shell. The table, show, and verify now follow that. A different shell value shows
+  as a note. The README and the help screen state the right order.
+
+Refs #46
+
+- **tui**: Show one question mark for help in the footer
+  ([`acd714b`](https://github.com/kraigochieng/claude-code-env-editor/commit/acd714b776cbab64056a2276bdf1c46a03d6c397))
+
+The key and the label both started with a question mark.
+
+Refs #46
+
+### Documentation
+
+- Refresh the screenshots after the palette and paste hint changes
+  ([`6017059`](https://github.com/kraigochieng/claude-code-env-editor/commit/60170591d8284f1381a0fdae357568231eabff2f))
+
+Closes #44
+
+- Say what claude code does and what this tool adds
+  ([`fd1b9d3`](https://github.com/kraigochieng/claude-code-env-editor/commit/fd1b9d3175a8b43241a5fe4c70d04de4110de8e3))
+
+Add the sections on built-in features, the added value, and the settings levels the tool cannot see.
+  Refresh the screenshots.
+
+Closes #46
+
+### Features
+
+- **tui**: Ask for confirmation before removing a variable
+  ([`60d52e7`](https://github.com/kraigochieng/claude-code-env-editor/commit/60d52e7caed2b2d9da350b9ef348a8ebdfaccb70))
+
+x opens a yes or no dialog. A value that only the shell holds is not removed, and the tool says so.
+
+Refs #46
+
+### Refactoring
+
+- **envvars**: Remove the CLAUDE_CONFIG_DIR row
+  ([`ceaaf6f`](https://github.com/kraigochieng/claude-code-env-editor/commit/ceaaf6f3b23092df9d65c4699584f9872da34d81))
+
+The banner shows the config directory and d switches it. The row could not be edited. set now
+  refuses that name with a hint.
+
+Refs #46
+
+
 ## v0.5.1 (2026-10-10)
 
 ### Bug Fixes
@@ -12,6 +67,26 @@ The worker thread called update_body on a screen that was gone, and Textual rais
   update_body now does nothing on a closed dialog, and the worker ignores a closed app.
 
 Closes #38
+
+### Documentation
+
+- Tell users to paste with ctrl+shift+v
+  ([`1a0b6c9`](https://github.com/kraigochieng/claude-code-env-editor/commit/1a0b6c92f72040ba92c6aabf0b0325e69d66badb))
+
+The home page status line, the edit dialog, the help screen, and the readme say that a terminal
+  pastes with Ctrl+Shift+V, not Ctrl+V. Screenshots are refreshed.
+
+Closes #40
+
+### Refactoring
+
+- **tui**: Remove the command palette and the theme picker
+  ([`482aa19`](https://github.com/kraigochieng/claude-code-env-editor/commit/482aa199f4e6dd391b65ac8f184773bfa0f6dd74))
+
+Set ENABLE_COMMAND_PALETTE to False. Ctrl+P does nothing and the footer has no palette entry. Rename
+  theme.tcss to styles.tcss, since it holds the fixed look of the tool and not a theme.
+
+Closes #42
 
 ### Testing
 
