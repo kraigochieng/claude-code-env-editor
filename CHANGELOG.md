@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-10-10)
+
+### Bug Fixes
+
+- **tui**: Do not crash when the verify dialog closes before the checks end
+  ([`742aaa5`](https://github.com/kraigochieng/claude-code-env-editor/commit/742aaa517751258e1b98a2ce77584fe90e7c593c))
+
+The worker thread called update_body on a screen that was gone, and Textual raised NoMatches.
+  update_body now does nothing on a closed dialog, and the worker ignores a closed app.
+
+Closes #38
+
+### Testing
+
+- Add opt-in live tests against real providers
+  ([`8c4cf77`](https://github.com/kraigochieng/claude-code-env-editor/commit/8c4cf779a64543696113667e3d9a64a453943b81))
+
+The tests send max_tokens=1 requests to DeepSeek and OpenRouter. They run only with -m live and when
+  the key variables are set. They skip on a network error. CI does not run them.
+
+Closes #36
+
+
 ## v0.5.0 (2026-10-10)
 
 ### Features
