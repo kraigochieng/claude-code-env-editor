@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import ClassVar, Final, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from claude_code_env_editor.files import atomic_write_text
 from claude_code_env_editor.registry import load_registry
 
 SETTINGS_NAME: Final[str] = "settings.json"
@@ -114,9 +114,9 @@ def settings_path(config_dir: Path) -> Path:
     return config_dir / SETTINGS_NAME
 
 
-def load_settings(config_dir: Path) -> Settings:
-    """Read settings.json. Return empty settings when the file is missing."""
-    path: Path = settings_path(config_dir=config_dir)
+def load_settings(settings_file: Path) -> Settings:
+    """Read a settings file. Return empty settings when the file is missing."""
+    path: Path = settings_file
     if not path.exists():
         return Settings()
     try:
@@ -129,38 +129,24 @@ def load_settings(config_dir: Path) -> Settings:
         raise ConfigError(f"{path} has a wrong shape: {exc.errors()[0]['msg']} at {exc.errors()[0]['loc']}.") from exc
 
 
-def load_env(config_dir: Path) -> dict[str, str]:
-    """Return the env block of settings.json as {name: value}."""
-    return load_settings(config_dir=config_dir).env
+def load_env(settings_file: Path) -> dict[str, str]:
+    """Return the env block of a settings file as {name: value}."""
+    return load_settings(settings_file=settings_file).env
 
 
-def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
-    """Merge updates into the env block. A value of None removes the key.
+def update_env(settings_file: Path, updates: Mapping[str, str | None]) -> Path:
+    """Merge updates into the env block of a settings file. A value of None removes the key.
 
-    The write is atomic. The old file is kept as settings.json.bak. The mode is 0600.
+    The write is atomic. The old file is kept as <name>.bak. The mode is 0600.
     All other keys in the file stay as they were.
     """
-    settings: Settings = load_settings(config_dir=config_dir)
+    settings: Settings = load_settings(settings_file=settings_file)
     for key, value in updates.items():
         if value is None:
             settings.env.pop(key, None)
         else:
             settings.env[key] = value
 
-    path: Path = settings_path(config_dir=config_dir)
-    config_dir.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        backup: Path = path.with_name(name=path.name + ".bak")
-        backup.write_bytes(data=path.read_bytes())
-        os.chmod(path=backup, mode=0o600)
-    fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".tmp")
-    try:
-        with os.fdopen(fd=fd, mode="w", encoding="utf-8") as handle:
-            json.dump(obj=settings.to_json_dict(), fp=handle, indent=2)
-            handle.write("\n")
-        os.chmod(path=tmp, mode=0o600)
-        os.replace(src=tmp, dst=path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-    return path
+    text: str = json.dumps(obj=settings.to_json_dict(), indent=2) + "\n"
+    atomic_write_text(path=settings_file, text=text, keep_backup=True)
+    return settings_file

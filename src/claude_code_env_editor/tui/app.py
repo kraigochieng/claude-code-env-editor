@@ -28,6 +28,7 @@ from claude_code_env_editor.envvars import (
     validate,
 )
 from claude_code_env_editor.presets import Preset, load_presets, preset_values
+from claude_code_env_editor.target import Target
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 REMOVE_CHOICE: Final[str] = "__remove__"
@@ -188,7 +189,7 @@ class EnvEditorApp(App[None]):
     def __init__(self, config_dir: Path) -> None:
         """Keep the config directory. Secrets start hidden."""
         super().__init__()
-        self.config_dir = config_dir
+        self.target: Target = Target.from_config_dir(config_dir=config_dir)
         self.reveal = False
         self.rows: list[Row] = []
 
@@ -214,7 +215,7 @@ class EnvEditorApp(App[None]):
         """Read the variables again and redraw the table. Keep the cursor on the row named keep."""
         try:
             self.rows = visible_rows(
-                rows=resolve(settings_env=config.load_env(config_dir=self.config_dir), environ=os.environ)
+                rows=resolve(settings_env=config.load_env(settings_file=self.target.settings_file), environ=os.environ)
             )
         except config.ConfigError as exc:
             self.rows = []
@@ -249,7 +250,7 @@ class EnvEditorApp(App[None]):
         t.append("* claude-code-env-editor", style="bold #d97757")
         t.append(f"  v{__version__}\n", style="dim")
         t.append("config dir  ", style="dim")
-        t.append(f"{self.config_dir}\n")
+        t.append(f"{self.target.config_dir}\n")
         t.append("endpoint    ", style="dim")
         t.append(f"{self._endpoint().host}\n")
         t.append("auth        ", style="dim")
@@ -280,7 +281,7 @@ class EnvEditorApp(App[None]):
             if value is None:
                 return
             try:
-                config.update_env(config_dir=self.config_dir, updates={row.name: value or None})
+                config.update_env(settings_file=self.target.settings_file, updates={row.name: value or None})
             except config.ConfigError as exc:
                 self.set_status(message=str(exc), error=True)
                 return
@@ -319,7 +320,7 @@ class EnvEditorApp(App[None]):
             if not confirmed:
                 self.set_status(message="Nothing removed.")
                 return
-            config.update_env(config_dir=self.config_dir, updates={row.name: None})
+            config.update_env(settings_file=self.target.settings_file, updates={row.name: None})
             self.refresh_rows(keep=row.name)
             self.set_status(message=f"Removed {row.name}. The old file is kept as settings.json.bak.")
 
@@ -349,7 +350,7 @@ class EnvEditorApp(App[None]):
             if not pid:
                 return
             values: dict[str, str] = preset_values(preset_id=pid)
-            config.update_env(config_dir=self.config_dir, updates=values)
+            config.update_env(settings_file=self.target.settings_file, updates=values)
             self.refresh_rows()
             self.set_status(message=f"Applied preset '{pid}'. Set ANTHROPIC_AUTH_TOKEN next if it is empty.")
 
@@ -358,14 +359,14 @@ class EnvEditorApp(App[None]):
     def action_switch_dir(self) -> None:
         """Open the config directory list and switch to the chosen one."""
         dirs: list[Path] = config.discover_config_dirs()
-        if self.config_dir not in dirs:
-            dirs.insert(0, self.config_dir)
+        if self.target.config_dir not in dirs:
+            dirs.insert(0, self.target.config_dir)
         options: list[tuple[str, str]] = [(str(d), str(d)) for d in dirs]
 
         def use_chosen_dir(choice: str | None) -> None:
             """Switch to the chosen config directory."""
             if choice:
-                self.config_dir = Path(choice)
+                self.target = Target.from_config_dir(config_dir=Path(choice))
                 self.refresh_rows()
                 self.set_status(message=f"Config dir: {choice}")
 
@@ -386,7 +387,7 @@ class EnvEditorApp(App[None]):
         endpoint: Endpoint = self._endpoint()
         screen: TextScreen = TextScreen(title="Verify", body=Text(text=f"Sending requests to {endpoint.host} only...", style="dim"))
         self.push_screen(screen=screen)
-        login_found: bool = config.has_login(config_dir=self.config_dir)
+        login_found: bool = config.has_login(config_dir=self.target.config_dir)
         self._run_verify(screen=screen, endpoint=endpoint, login_found=login_found)
 
     @work(thread=True)
