@@ -163,8 +163,8 @@ def cmd_preset(args) -> int:
     """List the presets, or apply one to settings.json."""
     presets = load_presets()
     if not args.name:
-        for pid, body in presets.items():
-            print(f"{pid:<12} {body['label']:<24} {body['ANTHROPIC_BASE_URL']}")
+        for pid, preset in presets.items():
+            print(f"{pid:<12} {preset.label:<24} {preset.base_url}")
         return 0
     try:
         values = preset_values(args.name)

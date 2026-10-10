@@ -5,9 +5,9 @@ from claude_code_env_editor.presets import load_presets, preset_values
 
 
 def test_every_preset_has_label_and_url():
-    for pid, body in load_presets().items():
-        assert body["label"], pid
-        assert body["ANTHROPIC_BASE_URL"].startswith("http"), pid
+    for pid, preset in load_presets().items():
+        assert preset.label, pid
+        assert preset.base_url.startswith("http"), pid
 
 
 def test_preset_keys_are_in_catalog():

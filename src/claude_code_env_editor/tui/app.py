@@ -248,7 +248,7 @@ class EnvEditorApp(App):
     def action_preset(self) -> None:
         """Open the preset list and apply the chosen preset."""
         presets = load_presets()
-        options = [(pid, f"{body['label']:<24} {body['ANTHROPIC_BASE_URL']}") for pid, body in presets.items()]
+        options = [(pid, f"{preset.label:<24} {preset.base_url}") for pid, preset in presets.items()]
 
         def apply_chosen_preset(pid: str | None) -> None:
             """Write the preset values to settings.json."""
