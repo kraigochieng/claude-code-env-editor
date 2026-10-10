@@ -17,6 +17,7 @@ _SUFFIX = re.compile(r"\[[^\]]*\]$")
 
 @dataclass(frozen=True)
 class Check:
+    """The result of one check: its name, pass/fail/skip, and a detail text."""
     name: str
     status: str
     detail: str = ""
@@ -28,6 +29,7 @@ def strip_model_suffix(model: str) -> str:
 
 
 def auth_headers(values: Mapping[str, str]) -> dict[str, str]:
+    """Build the request headers. A bearer token wins over an API key."""
     headers = {"anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"}
     if values.get("ANTHROPIC_AUTH_TOKEN"):
         headers["authorization"] = f"Bearer {values['ANTHROPIC_AUTH_TOKEN']}"
@@ -37,10 +39,12 @@ def auth_headers(values: Mapping[str, str]) -> dict[str, str]:
 
 
 def target_host(values: Mapping[str, str]) -> str:
+    """Return the host that the requests go to."""
     return urlparse(values.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com").netloc
 
 
 def _redact(text: str, values: Mapping[str, str]) -> str:
+    """Replace any secret in a text with ***."""
     for key in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
         if values.get(key):
             text = text.replace(values[key], "***")
@@ -89,6 +93,7 @@ def verify(
 
 
 def _check_models(client, base, headers, values) -> Check:
+    """Check the key with GET /v1/models."""
     start = time.perf_counter()
     try:
         resp = client.get(f"{base}/v1/models", headers=headers)
@@ -107,6 +112,7 @@ def _check_models(client, base, headers, values) -> Check:
 
 
 def _check_message(client, base, headers, model, values) -> Check:
+    """Check the model name with a one-token POST /v1/messages."""
     body = {
         "model": strip_model_suffix(model),
         "max_tokens": 1,

@@ -16,6 +16,7 @@ class ConfigError(Exception):
 
 
 def default_config_dir(environ: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
+    """Return the config directory: $CLAUDE_CONFIG_DIR if set, else ~/.claude."""
     environ = os.environ if environ is None else environ
     if environ.get("CLAUDE_CONFIG_DIR"):
         return Path(environ["CLAUDE_CONFIG_DIR"]).expanduser()
@@ -29,10 +30,12 @@ def discover_config_dirs(home: Path | None = None) -> list[Path]:
 
 
 def settings_path(config_dir: Path) -> Path:
+    """Return the path of settings.json in a config directory."""
     return config_dir / SETTINGS_NAME
 
 
 def load_settings(config_dir: Path) -> dict:
+    """Read settings.json. Return {} when the file is missing."""
     path = settings_path(config_dir)
     if not path.exists():
         return {}
@@ -46,6 +49,7 @@ def load_settings(config_dir: Path) -> dict:
 
 
 def load_env(config_dir: Path) -> dict[str, str]:
+    """Return the env block of settings.json as {name: value}."""
     env = load_settings(config_dir).get("env", {})
     if not isinstance(env, dict):
         raise ConfigError(f"The env key in {settings_path(config_dir)} must be an object.")
