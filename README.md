@@ -79,11 +79,9 @@ Inside the TUI press `d` to switch between the `~/.claude*` directories.
 
 - Secrets (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`) show masked. The tool never logs them.
 - `settings.json` is written atomically with mode `0600`. The old file stays as `settings.json.bak`.
-- **Limit:** Claude Code reads keys from `settings.json` or the environment, not from a keyring.
-  So a key that must reach Claude Code is written to `settings.json`. The tool also saves a copy in the
-  OS keyring (macOS Keychain, Windows Credential Locker, or the Secret Service on Linux). Without a keyring
-  the CLI uses a passphrase-encrypted vault (`scrypt` + Fernet, mode `0600`).
-  Use `set --no-write-secret` to keep a key out of `settings.json` and export it yourself.
+- Claude Code reads keys from `settings.json` or the environment, so that is where the tool writes them.
+  The tool keeps no second copy. Any program that runs as you can read the file. Keep the file private.
+  Use `set --no-write-secret` to keep a key out of the file. The tool prints an `export` line instead.
 - Verify sends requests only to your `ANTHROPIC_BASE_URL`, shows the host first, and never follows a
   redirect. It warns about `http://` URLs that are not local.
 - Secrets are never read from command arguments, so they stay out of shell history.

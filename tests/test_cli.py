@@ -50,7 +50,6 @@ def test_set_rejects_bad_integer(tmp_path, monkeypatch):
 
 
 def test_set_secret_does_not_print_it(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "_store", lambda: type("S", (), {"set": lambda *a: None})())
     run(["set", "ANTHROPIC_AUTH_TOKEN", "sk-0123456789abcdef"], tmp_path, monkeypatch)
     assert "0123456789" not in capsys.readouterr().out
 
@@ -80,3 +79,14 @@ def test_unset(tmp_path, monkeypatch):
     run(["set", "ANTHROPIC_MODEL", "m1"], tmp_path, monkeypatch)
     run(["unset", "ANTHROPIC_MODEL"], tmp_path, monkeypatch)
     assert json.loads((tmp_path / "settings.json").read_text()) == {}
+
+
+def test_no_write_secret_writes_nothing(tmp_path, monkeypatch, capsys):
+    run(["set", "ANTHROPIC_AUTH_TOKEN", "sk-0123456789abcdef", "--no-write-secret"], tmp_path, monkeypatch)
+    assert not (tmp_path / "settings.json").exists()
+    assert "export ANTHROPIC_AUTH_TOKEN=" in capsys.readouterr().out
+
+
+def test_set_secret_writes_settings_with_mode_0600(tmp_path, monkeypatch):
+    run(["set", "ANTHROPIC_AUTH_TOKEN", "sk-0123456789abcdef"], tmp_path, monkeypatch)
+    assert (tmp_path / "settings.json").stat().st_mode & 0o777 == 0o600
