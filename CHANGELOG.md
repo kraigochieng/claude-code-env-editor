@@ -1,6 +1,47 @@
 # CHANGELOG
 
 
+## v0.7.0 (2026-10-10)
+
+### Features
+
+- **cli**: Add the profile command
+  ([`f23e1a6`](https://github.com/kraigochieng/claude-code-env-editor/commit/f23e1a685e4e0da2002698c819e86dd1b0ab54e1))
+
+profile lists, shows, saves, and deletes profiles. save takes the values of the target, or copies a
+  profile with --from. --no-key leaves the key out. show masks keys unless --reveal is given.
+
+Closes #50
+
+- **profiles**: Store named sets of variables in profiles.toml
+  ([`afb2235`](https://github.com/kraigochieng/claude-code-env-editor/commit/afb2235aa3bc98601c1b1847f3cbd63f63afa80c))
+
+A profile holds known variables with valid values, an optional key, and a note. The file has mode
+  0600 in a 0700 directory, with a .gitignore. Built-in profiles come from the presets. A broken
+  file is never overwritten.
+
+Refs #50
+
+### Refactoring
+
+- Let the config functions take a settings file and add a Target model
+  ([`5a6f754`](https://github.com/kraigochieng/claude-code-env-editor/commit/5a6f754480fb7fedcec9dda628621b4810d77695))
+
+load_settings, load_env, and update_env take a settings file. A Target holds that file and the
+  config directory whose login applies. The command line and the TUI build a Target from the config
+  directory, so behavior does not change. Profiles will point a Target at any file.
+
+Closes #48
+
+- **config**: Write settings files through an atomic write helper
+  ([`57ddcfa`](https://github.com/kraigochieng/claude-code-env-editor/commit/57ddcfa09f39b513b19bda6d5d19492b7d1f2f3d))
+
+The helper writes a temporary file, sets the mode, and renames it. It can keep a private .bak copy.
+  Profiles will use it for profiles.toml.
+
+Refs #48
+
+
 ## v0.6.0 (2026-10-10)
 
 ### Bug Fixes
