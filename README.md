@@ -175,6 +175,14 @@ uv venv && uv pip install -e '.[dev]'
 .venv/bin/python -m pytest
 ```
 
+Live tests send real requests (`max_tokens: 1`) to DeepSeek and OpenRouter. They are skipped by default and CI does not run them.
+Set your own keys in the environment to run them. The keys are never written to a file.
+
+```sh
+CCEE_LIVE_DEEPSEEK_KEY=... CCEE_LIVE_OPENROUTER_KEY=... .venv/bin/python -m pytest -m live
+```
+
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
