@@ -1,6 +1,32 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-10-10)
+
+### Features
+
+- **envvars**: Make the effort level a choice and range-check the compact window
+  ([`9a05e4a`](https://github.com/kraigochieng/claude-code-env-editor/commit/9a05e4a0f52eca609c3985f901650bac08f72afd))
+
+Refs #34
+
+- **tui**: Edit a choice variable from a list
+  ([`7dd26de`](https://github.com/kraigochieng/claude-code-env-editor/commit/7dd26dec67707e5da8c5043da60ae3a4716a22ac))
+
+The vars command lists the allowed values and the range.
+
+Closes #34
+
+- **verify**: Show clear messages for failed checks
+  ([`66f0c0f`](https://github.com/kraigochieng/claude-code-env-editor/commit/66f0c0f88364703deda3f532c8b23ae480d851d3))
+
+Show the provider error message instead of raw JSON, suggest close model names from the models list,
+  explain a rejected key after a public models list, and give plain reasons for 402, 429, 5xx,
+  timeouts, and connection errors. Name the model that was sent when a suffix is removed.
+
+Closes #32
+
+
 ## v0.4.0 (2026-10-10)
 
 ### Bug Fixes
