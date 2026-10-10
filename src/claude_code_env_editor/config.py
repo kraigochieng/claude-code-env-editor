@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Mapping
 
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
 from claude_code_env_editor.registry import load_registry
 
 SETTINGS_NAME = "settings.json"
@@ -15,6 +17,29 @@ SETTINGS_NAME = "settings.json"
 
 class ConfigError(Exception):
     """The settings file cannot be read or written."""
+
+
+class Settings(BaseModel):
+    """The content of settings.json. Only the env block is known. All other keys are kept as they are."""
+
+    model_config = ConfigDict(extra="allow")
+
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _env_values_to_text(cls, value):
+        """Accept numbers and booleans in the env block and read them as text."""
+        if isinstance(value, dict):
+            return {str(k): str(v) for k, v in value.items()}
+        return value
+
+    def to_json_dict(self) -> dict:
+        """Return the JSON content: the unknown keys first, then env. An empty env is left out."""
+        content = dict(self.model_extra or {})
+        if self.env:
+            content["env"] = self.env
+        return content
 
 
 def default_config_dir(environ: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
@@ -69,26 +94,24 @@ def settings_path(config_dir: Path) -> Path:
     return config_dir / SETTINGS_NAME
 
 
-def load_settings(config_dir: Path) -> dict:
-    """Read settings.json. Return {} when the file is missing."""
+def load_settings(config_dir: Path) -> Settings:
+    """Read settings.json. Return empty settings when the file is missing."""
     path = settings_path(config_dir)
     if not path.exists():
-        return {}
+        return Settings()
     try:
         data = json.loads(path.read_text(encoding="utf-8") or "{}")
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path} is not valid JSON: {exc.msg} (line {exc.lineno}).") from exc
-    if not isinstance(data, dict):
-        raise ConfigError(f"{path} must hold a JSON object.")
-    return data
+    try:
+        return Settings.model_validate(data)
+    except ValidationError as exc:
+        raise ConfigError(f"{path} has a wrong shape: {exc.errors()[0]['msg']} at {exc.errors()[0]['loc']}.") from exc
 
 
 def load_env(config_dir: Path) -> dict[str, str]:
     """Return the env block of settings.json as {name: value}."""
-    env = load_settings(config_dir).get("env", {})
-    if not isinstance(env, dict):
-        raise ConfigError(f"The env key in {settings_path(config_dir)} must be an object.")
-    return {k: str(v) for k, v in env.items()}
+    return load_settings(config_dir).env
 
 
 def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
@@ -98,17 +121,11 @@ def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
     All other keys in the file stay as they were.
     """
     settings = load_settings(config_dir)
-    env = settings.get("env", {})
-    if not isinstance(env, dict):
-        raise ConfigError(f"The env key in {settings_path(config_dir)} must be an object.")
     for key, value in updates.items():
         if value is None:
-            env.pop(key, None)
+            settings.env.pop(key, None)
         else:
-            env[key] = value
-    settings["env"] = env
-    if not env:
-        settings.pop("env")
+            settings.env[key] = value
 
     path = settings_path(config_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +136,7 @@ def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
     fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(settings, handle, indent=2)
+            json.dump(settings.to_json_dict(), handle, indent=2)
             handle.write("\n")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)

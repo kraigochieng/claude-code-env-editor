@@ -95,3 +95,27 @@ def test_discover_merges_sources_without_duplicates(tmp_path):
     assert found[0] == tmp_path / ".claude"
     assert outside.resolve() in found
     assert found.count(scanned.resolve()) == 1 or found.count(scanned) == 1
+
+
+def test_env_numbers_are_read_as_text(tmp_path):
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"API_TIMEOUT_MS": 5000}}))
+    assert config.load_env(tmp_path) == {"API_TIMEOUT_MS": "5000"}
+
+
+def test_env_that_is_not_an_object_raises(tmp_path):
+    (tmp_path / "settings.json").write_text(json.dumps({"env": ["a"]}))
+    with pytest.raises(config.ConfigError):
+        config.load_env(tmp_path)
+
+
+def test_top_level_list_raises(tmp_path):
+    (tmp_path / "settings.json").write_text("[]")
+    with pytest.raises(config.ConfigError):
+        config.load_settings(tmp_path)
+
+
+def test_unknown_keys_survive_a_write(tmp_path):
+    (tmp_path / "settings.json").write_text(json.dumps({"hooks": {"a": [1, 2]}, "n": 3}))
+    config.update_env(tmp_path, {"A": "1"})
+    data = json.loads((tmp_path / "settings.json").read_text())
+    assert data["hooks"] == {"a": [1, 2]} and data["n"] == 3 and data["env"] == {"A": "1"}
