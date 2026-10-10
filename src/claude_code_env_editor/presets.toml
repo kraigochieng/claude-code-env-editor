@@ -1,23 +1,30 @@
+# auth is the secret variable the endpoint expects: api_key = ANTHROPIC_API_KEY (x-api-key),
+# auth_token = ANTHROPIC_AUTH_TOKEN (Authorization: Bearer). Sources: provider guides. Verify them.
 # Sample endpoints. Verify each URL and model name before you rely on it. They change.
 
 [anthropic]
 label = "Anthropic (default)"
+auth = "api_key"
 ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 [openrouter]
 label = "OpenRouter"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "https://openrouter.ai/api"
 
 [zai]
 label = "Z.ai (GLM)"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic"
 
 [moonshot]
 label = "Moonshot (Kimi)"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "https://api.moonshot.ai/anthropic"
 
 [deepseek]
 label = "DeepSeek"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
 ANTHROPIC_MODEL = "deepseek-flash[1m]"
 ANTHROPIC_DEFAULT_OPUS_MODEL = "deepseek-flash[1m]"
@@ -29,8 +36,10 @@ CLAUDE_CODE_AUTO_COMPACT_WINDOW = "786432"
 
 [litellm]
 label = "Local LiteLLM proxy"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "http://localhost:4000"
 
 [ollama]
 label = "Local Ollama"
+auth = "auth_token"
 ANTHROPIC_BASE_URL = "http://localhost:11434"
