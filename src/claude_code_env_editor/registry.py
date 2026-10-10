@@ -29,14 +29,14 @@ def default_registry_path() -> Path:
     Linux uses $XDG_CONFIG_HOME (default ~/.config). macOS uses ~/Library/Application Support.
     Windows uses %APPDATA%.
     """
-    return Path(user_config_dir(APP_NAME)) / REGISTRY_NAME
+    return Path(user_config_dir(appname=APP_NAME)) / REGISTRY_NAME
 
 
 def load_registry(registry_path: Path | None = None) -> list[Path]:
     """Return the registered directories. A missing or broken file gives an empty list."""
     path = registry_path or default_registry_path()
     try:
-        registry = RegistryFile.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
+        registry = RegistryFile.model_validate(obj=tomllib.loads(path.read_text(encoding="utf-8")))
     except (OSError, tomllib.TOMLDecodeError, ValidationError):
         return []
     return [directory.expanduser() for directory in registry.dirs]
@@ -45,18 +45,18 @@ def load_registry(registry_path: Path | None = None) -> list[Path]:
 def _save_registry(dirs: list[Path], registry_path: Path) -> None:
     """Write the registry as a TOML list of strings."""
     registry_path.parent.mkdir(parents=True, exist_ok=True)
-    items = ",\n".join(f"  {json.dumps(str(d))}" for d in dirs)
-    registry_path.write_text(f"dirs = [\n{items}\n]\n" if dirs else "dirs = []\n", encoding="utf-8")
+    items = ",\n".join(f"  {json.dumps(obj=str(d))}" for d in dirs)
+    registry_path.write_text(data=f"dirs = [\n{items}\n]\n" if dirs else "dirs = []\n", encoding="utf-8")
 
 
 def add_to_registry(directory: Path, registry_path: Path | None = None) -> bool:
     """Register a directory. Return False when it is already there."""
     path = registry_path or default_registry_path()
     directory = directory.expanduser().resolve()
-    dirs = load_registry(path)
+    dirs = load_registry(registry_path=path)
     if directory in dirs:
         return False
-    _save_registry([*dirs, directory], path)
+    _save_registry(dirs=[*dirs, directory], registry_path=path)
     return True
 
 
@@ -64,8 +64,8 @@ def remove_from_registry(directory: Path, registry_path: Path | None = None) -> 
     """Remove a directory. Return False when it was not registered."""
     path = registry_path or default_registry_path()
     directory = directory.expanduser().resolve()
-    dirs = load_registry(path)
+    dirs = load_registry(registry_path=path)
     if directory not in dirs:
         return False
-    _save_registry([d for d in dirs if d != directory], path)
+    _save_registry(dirs=[d for d in dirs if d != directory], registry_path=path)
     return True

@@ -12,12 +12,12 @@ def test_every_preset_has_label_and_url():
 
 def test_preset_keys_are_in_catalog():
     for pid in load_presets():
-        for key in preset_values(pid):
+        for key in preset_values(preset_id=pid):
             assert key in BY_NAME, (pid, key)
 
 
 def test_deepseek_preset_matches_documented_values():
-    v = preset_values("deepseek")
+    v = preset_values(preset_id="deepseek")
     assert v["ANTHROPIC_MODEL"] == "deepseek-flash[1m]"
     assert v["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "786432"
     assert "ANTHROPIC_AUTH_TOKEN" not in v
@@ -25,4 +25,4 @@ def test_deepseek_preset_matches_documented_values():
 
 def test_unknown_preset():
     with pytest.raises(KeyError):
-        preset_values("nope")
+        preset_values(preset_id="nope")

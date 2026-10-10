@@ -66,7 +66,7 @@ def scan_home_for_config_dirs(home: Path) -> list[Path]:
         children = sorted(home.iterdir())
     except OSError:
         return []
-    return [p for p in children if p.name.startswith(".") and p.is_dir() and looks_like_config_dir(p)]
+    return [p for p in children if p.name.startswith(".") and p.is_dir() and looks_like_config_dir(directory=p)]
 
 
 def discover_config_dirs(
@@ -79,9 +79,9 @@ def discover_config_dirs(
     A directory shows once. The order is the order of the sources.
     """
     home = home or Path.home()
-    found: list[Path] = [default_config_dir(environ, home)]
-    found += load_registry(registry_path)
-    found += scan_home_for_config_dirs(home)
+    found: list[Path] = [default_config_dir(environ=environ, home=home)]
+    found += load_registry(registry_path=registry_path)
+    found += scan_home_for_config_dirs(home=home)
     unique: list[Path] = []
     for directory in found:
         if directory not in unique:
@@ -96,22 +96,22 @@ def settings_path(config_dir: Path) -> Path:
 
 def load_settings(config_dir: Path) -> Settings:
     """Read settings.json. Return empty settings when the file is missing."""
-    path = settings_path(config_dir)
+    path = settings_path(config_dir=config_dir)
     if not path.exists():
         return Settings()
     try:
-        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+        data = json.loads(s=path.read_text(encoding="utf-8") or "{}")
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path} is not valid JSON: {exc.msg} (line {exc.lineno}).") from exc
     try:
-        return Settings.model_validate(data)
+        return Settings.model_validate(obj=data)
     except ValidationError as exc:
         raise ConfigError(f"{path} has a wrong shape: {exc.errors()[0]['msg']} at {exc.errors()[0]['loc']}.") from exc
 
 
 def load_env(config_dir: Path) -> dict[str, str]:
     """Return the env block of settings.json as {name: value}."""
-    return load_settings(config_dir).env
+    return load_settings(config_dir=config_dir).env
 
 
 def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
@@ -120,26 +120,26 @@ def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
     The write is atomic. The old file is kept as settings.json.bak. The mode is 0600.
     All other keys in the file stay as they were.
     """
-    settings = load_settings(config_dir)
+    settings = load_settings(config_dir=config_dir)
     for key, value in updates.items():
         if value is None:
             settings.env.pop(key, None)
         else:
             settings.env[key] = value
 
-    path = settings_path(config_dir)
+    path = settings_path(config_dir=config_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        backup = path.with_name(path.name + ".bak")
-        backup.write_bytes(path.read_bytes())
-        os.chmod(backup, 0o600)
+        backup = path.with_name(name=path.name + ".bak")
+        backup.write_bytes(data=path.read_bytes())
+        os.chmod(path=backup, mode=0o600)
     fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(settings.to_json_dict(), handle, indent=2)
+        with os.fdopen(fd=fd, mode="w", encoding="utf-8") as handle:
+            json.dump(obj=settings.to_json_dict(), fp=handle, indent=2)
             handle.write("\n")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        os.chmod(path=tmp, mode=0o600)
+        os.replace(src=tmp, dst=path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
