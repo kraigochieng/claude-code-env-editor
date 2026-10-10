@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Literal, Mapping
+from typing import Final, Literal, Mapping
 from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
 ANTHROPIC_VERSION = "2023-06-01"
-PASS, FAIL, SKIP = "pass", "fail", "skip"
+PASS: Final = "pass"
+FAIL: Final = "fail"
+SKIP: Final = "skip"
 _SUFFIX = re.compile(r"\[[^\]]*\]$")
 
 

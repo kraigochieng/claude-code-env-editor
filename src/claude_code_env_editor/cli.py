@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    def add_command(name, help_, example):
+    def add_command(name: str, help_: str, example: str) -> argparse.ArgumentParser:
         """Register one command with its description and an example line."""
         p = sub.add_parser(
             name=name,
@@ -99,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _chosen_config_dir(args) -> Path:
+def _chosen_config_dir(args: argparse.Namespace) -> Path:
     """Return the config directory the user chose, or the default."""
     return args.config_dir.expanduser() if args.config_dir else config.default_config_dir()
 
@@ -110,7 +110,7 @@ def _values_in_effect(config_dir: Path) -> dict[str, str]:
     return {r.name: r.value for r in rows if r.source != SOURCE_UNSET}
 
 
-def cmd_show(args) -> int:
+def cmd_show(args: argparse.Namespace) -> int:
     """Print each variable with its value and source."""
     config_dir = _chosen_config_dir(args=args)
     print(f"config dir: {config_dir}")
@@ -127,7 +127,7 @@ def _read_secret(name: str) -> str:
     return sys.stdin.readline().rstrip("\n")
 
 
-def cmd_set(args) -> int:
+def cmd_set(args: argparse.Namespace) -> int:
     """Set one variable in settings.json, or print an export line for --no-write-secret."""
     spec = BY_NAME.get(args.name)
     if spec and not spec.writable:
@@ -152,14 +152,14 @@ def cmd_set(args) -> int:
     return 0
 
 
-def cmd_unset(args) -> int:
+def cmd_unset(args: argparse.Namespace) -> int:
     """Remove one variable from settings.json."""
     path = config.update_env(config_dir=_chosen_config_dir(args=args), updates={args.name: None})
     print(f"Removed {args.name} from {path}")
     return 0
 
 
-def cmd_preset(args) -> int:
+def cmd_preset(args: argparse.Namespace) -> int:
     """List the presets, or apply one to settings.json."""
     presets = load_presets()
     if not args.name:
@@ -178,7 +178,7 @@ def cmd_preset(args) -> int:
     return 0
 
 
-def cmd_verify(args) -> int:
+def cmd_verify(args: argparse.Namespace) -> int:
     """Run the verify checks and return 1 if any check failed."""
     endpoint = Endpoint.from_values(values=_values_in_effect(config_dir=_chosen_config_dir(args=args)))
     print(f"Sending requests to {endpoint.host} only.")
@@ -188,7 +188,7 @@ def cmd_verify(args) -> int:
     return 1 if any(c.status == FAIL for c in checks) else 0
 
 
-def cmd_export(args) -> int:
+def cmd_export(args: argparse.Namespace) -> int:
     """Print 'export NAME=value' lines for the variables that have a value."""
     for row in resolve(settings_env=config.load_env(config_dir=_chosen_config_dir(args=args)), environ=os.environ):
         if row.source == SOURCE_UNSET or not row.spec or not row.spec.writable:
@@ -203,7 +203,7 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def cmd_dirs(args) -> int:
+def cmd_dirs(args: argparse.Namespace) -> int:
     """List the known config directories, or change the registry."""
     if args.action == "list":
         registered = set(load_registry())
@@ -225,7 +225,7 @@ def cmd_dirs(args) -> int:
     return 0
 
 
-def cmd_vars(args) -> int:
+def cmd_vars(args: argparse.Namespace) -> int:
     """List every variable in the catalog with its type and meaning."""
     for spec in CATALOG:
         flag = "secret" if spec.secret else spec.kind
@@ -236,7 +236,7 @@ def cmd_vars(args) -> int:
 INSTALL_URL = "https://raw.githubusercontent.com/kraigochieng/claude-code-env-editor/main/install.sh"
 
 
-def cmd_self_update(args) -> int:
+def cmd_self_update(args: argparse.Namespace) -> int:
     """Download install.sh and run it to install the latest or a chosen version."""
     import subprocess
 
@@ -248,14 +248,14 @@ def cmd_self_update(args) -> int:
     return subprocess.run(args=cmd, input=script.stdout, text=True).returncode
 
 
-def cmd_self_uninstall(args) -> int:
+def cmd_self_uninstall(args: argparse.Namespace) -> int:
     """Remove this tool with uv."""
     import subprocess
 
     return subprocess.run(args=["uv", "tool", "uninstall", "claude-code-env-editor"]).returncode
 
 
-def cmd_tui(args) -> int:
+def cmd_tui(args: argparse.Namespace) -> int:
     """Open the full-screen interface."""
     from claude_code_env_editor.tui.app import run
 

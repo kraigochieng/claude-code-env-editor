@@ -28,13 +28,13 @@ class Settings(BaseModel):
 
     @field_validator("env", mode="before")
     @classmethod
-    def _env_values_to_text(cls, value):
+    def _env_values_to_text(cls, value: object) -> object:
         """Accept numbers and booleans in the env block and read them as text."""
         if isinstance(value, dict):
             return {str(k): str(v) for k, v in value.items()}
         return value
 
-    def to_json_dict(self) -> dict:
+    def to_json_dict(self) -> dict[str, object]:
         """Return the JSON content: the unknown keys first, then env. An empty env is left out."""
         content = dict(self.model_extra or {})
         if self.env:
