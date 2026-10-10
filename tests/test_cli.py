@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 import pytest
 
@@ -65,7 +65,7 @@ def test_show_masks_secret_unless_reveal(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_preset_applies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert run(["preset", "deepseek"], tmp_path, monkeypatch) == 0
-    env = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
+    env: dict[str, str] = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
     assert env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
 
 

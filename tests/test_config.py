@@ -1,6 +1,6 @@
-from pathlib import Path
 import json
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -16,20 +16,20 @@ def test_default_config_dir_falls_back_to_home(tmp_path: Path) -> None:
 
 
 def test_discover_always_lists_the_default_directory(tmp_path: Path) -> None:
-    found = config.discover_config_dirs(home=tmp_path, registry_path=tmp_path / "none.toml", environ={})
+    found: list[Path] = config.discover_config_dirs(home=tmp_path, registry_path=tmp_path / "none.toml", environ={})
     assert found == [tmp_path / ".claude"]
 
 
 def test_discover_uses_claude_config_dir_as_default(tmp_path: Path) -> None:
-    env = {"CLAUDE_CONFIG_DIR": str(tmp_path / "custom")}
-    found = config.discover_config_dirs(home=tmp_path, registry_path=tmp_path / "none.toml", environ=env)
+    env: dict[str, str] = {"CLAUDE_CONFIG_DIR": str(tmp_path / "custom")}
+    found: list[Path] = config.discover_config_dirs(home=tmp_path, registry_path=tmp_path / "none.toml", environ=env)
     assert found[0] == tmp_path / "custom"
 
 
 def test_update_env_keeps_other_keys(tmp_path: Path) -> None:
     (tmp_path / "settings.json").write_text(data=json.dumps(obj={"theme": "dark", "env": {"A": "1"}}))
     config.update_env(config_dir=tmp_path, updates={"B": "2"})
-    data = json.loads(s=(tmp_path / "settings.json").read_text())
+    data: dict[str, object] = json.loads(s=(tmp_path / "settings.json").read_text())
     assert data == {"theme": "dark", "env": {"A": "1", "B": "2"}}
 
 
@@ -42,7 +42,7 @@ def test_update_env_removes_key_and_empty_block(tmp_path: Path) -> None:
 def test_update_env_sets_mode_and_backup(tmp_path: Path) -> None:
     config.update_env(config_dir=tmp_path, updates={"A": "1"})
     config.update_env(config_dir=tmp_path, updates={"A": "2"})
-    mode = stat.S_IMODE((tmp_path / "settings.json").stat().st_mode)
+    mode: int = stat.S_IMODE((tmp_path / "settings.json").stat().st_mode)
     assert mode == 0o600
     assert json.loads(s=(tmp_path / "settings.json.bak").read_text())["env"] == {"A": "1"}
 
@@ -65,7 +65,7 @@ def make_login(path: Path) -> Path:
 
 
 def test_scan_finds_directory_without_claude_name(tmp_path: Path) -> None:
-    login = make_login(tmp_path / ".work-login")
+    login: Path = make_login(tmp_path / ".work-login")
     assert login in config.scan_home_for_config_dirs(home=tmp_path)
 
 
@@ -77,7 +77,7 @@ def test_scan_ignores_unrelated_directories(tmp_path: Path) -> None:
 
 
 def test_scan_accepts_settings_with_projects(tmp_path: Path) -> None:
-    login = tmp_path / ".acct"
+    login: Path = tmp_path / ".acct"
     (login / "projects").mkdir(parents=True)
     (login / "settings.json").write_text(data="{}")
     assert login in config.scan_home_for_config_dirs(home=tmp_path)
@@ -86,13 +86,13 @@ def test_scan_accepts_settings_with_projects(tmp_path: Path) -> None:
 def test_discover_merges_sources_without_duplicates(tmp_path: Path) -> None:
     from claude_code_env_editor.registry import add_to_registry
 
-    registry = tmp_path / "reg" / "dirs.toml"
-    scanned = make_login(tmp_path / ".scanned")
-    outside = tmp_path / "elsewhere"
+    registry: Path = tmp_path / "reg" / "dirs.toml"
+    scanned: Path = make_login(tmp_path / ".scanned")
+    outside: Path = tmp_path / "elsewhere"
     outside.mkdir()
     add_to_registry(directory=outside, registry_path=registry)
     add_to_registry(directory=scanned, registry_path=registry)
-    found = config.discover_config_dirs(home=tmp_path, registry_path=registry, environ={})
+    found: list[Path] = config.discover_config_dirs(home=tmp_path, registry_path=registry, environ={})
     assert found[0] == tmp_path / ".claude"
     assert outside.resolve() in found
     assert found.count(scanned.resolve()) == 1 or found.count(scanned) == 1
@@ -118,5 +118,5 @@ def test_top_level_list_raises(tmp_path: Path) -> None:
 def test_unknown_keys_survive_a_write(tmp_path: Path) -> None:
     (tmp_path / "settings.json").write_text(data=json.dumps(obj={"hooks": {"a": [1, 2]}, "n": 3}))
     config.update_env(config_dir=tmp_path, updates={"A": "1"})
-    data = json.loads(s=(tmp_path / "settings.json").read_text())
+    data: dict[str, object] = json.loads(s=(tmp_path / "settings.json").read_text())
     assert data["hooks"] == {"a": [1, 2]} and data["n"] == 3 and data["env"] == {"A": "1"}
