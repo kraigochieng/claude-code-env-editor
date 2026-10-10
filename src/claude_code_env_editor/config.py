@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Mapping
 
+from claude_code_env_editor.registry import load_registry
+
 SETTINGS_NAME = "settings.json"
 
 
@@ -23,10 +25,43 @@ def default_config_dir(environ: Mapping[str, str] | None = None, home: Path | No
     return (home or Path.home()) / ".claude"
 
 
-def discover_config_dirs(home: Path | None = None) -> list[Path]:
-    """List the ~/.claude* directories. Each one can hold one Claude Code login."""
+def looks_like_config_dir(directory: Path) -> bool:
+    """Return True when a directory holds the files of a Claude Code login."""
+    if (directory / ".claude.json").is_file():
+        return True
+    return (directory / SETTINGS_NAME).is_file() and (directory / "projects").is_dir()
+
+
+def scan_home_for_config_dirs(home: Path) -> list[Path]:
+    """Find hidden directories in the home directory that look like a Claude Code login.
+
+    The name does not matter. Only the files inside decide.
+    """
+    try:
+        children = sorted(home.iterdir())
+    except OSError:
+        return []
+    return [p for p in children if p.name.startswith(".") and p.is_dir() and looks_like_config_dir(p)]
+
+
+def discover_config_dirs(
+    home: Path | None = None,
+    registry_path: Path | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> list[Path]:
+    """List the config directories: the default one, registered ones, then scanned ones.
+
+    A directory shows once. The order is the order of the sources.
+    """
     home = home or Path.home()
-    return sorted(p for p in home.glob(".claude*") if p.is_dir())
+    found: list[Path] = [default_config_dir(environ, home)]
+    found += load_registry(registry_path)
+    found += scan_home_for_config_dirs(home)
+    unique: list[Path] = []
+    for directory in found:
+        if directory not in unique:
+            unique.append(directory)
+    return unique
 
 
 def settings_path(config_dir: Path) -> Path:
