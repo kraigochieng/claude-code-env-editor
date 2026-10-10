@@ -20,6 +20,7 @@ from claude_code_env_editor import __version__, config
 from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
     CHOICE,
+    SOURCE_ENV,
     SOURCE_UNSET,
     Row,
     VarSpec,
@@ -81,6 +82,38 @@ class EditScreen(ModalScreen[str | None]):
     def action_cancel(self) -> None:
         """Close the dialog without a change."""
         self.dismiss(result=None)
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    """Dialog that asks a yes or no question. It returns True for yes."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(key="y,enter", action="yes", description="Yes"),
+        Binding(key="n,escape", action="no", description="No"),
+    ]
+
+    def __init__(self, title: str, question: str, hint: str) -> None:
+        """Keep the title, the question, and the hint text."""
+        super().__init__()
+        self.title_text: str = title
+        self.question: str = question
+        self.hint_text: str = hint
+
+    def compose(self) -> ComposeResult:
+        """Build the dialog: title, question, key hints."""
+        with Vertical(classes="dialog"):
+            yield Static(self.title_text, classes="heading")
+            yield Static(self.question, id="question")
+            yield Static("y or enter: yes  -  n or esc: no", classes="hint")
+            yield Static(self.hint_text, classes="hint")
+
+    def action_yes(self) -> None:
+        """Close the dialog with yes."""
+        self.dismiss(result=True)
+
+    def action_no(self) -> None:
+        """Close the dialog with no."""
+        self.dismiss(result=False)
 
 
 class PickScreen(ModalScreen[str | None]):
@@ -275,9 +308,29 @@ class EnvEditorApp(App[None]):
         row: Row | None = self.selected()
         if row is None or row.source == SOURCE_UNSET:
             return
-        config.update_env(config_dir=self.config_dir, updates={row.name: None})
-        self.refresh_rows(keep=row.name)
-        self.set_status(message=f"Removed {row.name} from settings.json.")
+        if row.source == SOURCE_ENV:
+            self.set_status(message=f"{row.name} is in your shell, not in settings.json. The tool cannot remove it.", error=True)
+            return
+        shown: str = row.value if self.reveal else row.display
+        question: str = f"Remove {row.name} (value: {shown or '-'}) from settings.json?"
+
+        def remove_when_confirmed(confirmed: bool | None) -> None:
+            """Remove the variable only after a yes."""
+            if not confirmed:
+                self.set_status(message="Nothing removed.")
+                return
+            config.update_env(config_dir=self.config_dir, updates={row.name: None})
+            self.refresh_rows(keep=row.name)
+            self.set_status(message=f"Removed {row.name}. The old file is kept as settings.json.bak.")
+
+        self.push_screen(
+            screen=ConfirmScreen(
+                title="Remove variable",
+                question=question,
+                hint="The old file is kept as settings.json.bak.",
+            ),
+            callback=remove_when_confirmed,
+        )
 
     def action_reveal(self) -> None:
         """Toggle between masked and full secret values."""
