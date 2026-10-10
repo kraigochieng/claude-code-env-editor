@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from platformdirs import user_config_dir
+from pydantic import BaseModel, ValidationError
 
 try:
     import tomllib
@@ -14,6 +15,12 @@ except ModuleNotFoundError:  # Python 3.10
 
 APP_NAME = "claude-code-env-editor"
 REGISTRY_NAME = "dirs.toml"
+
+
+class RegistryFile(BaseModel):
+    """The content of dirs.toml: the config directories that the user added."""
+
+    dirs: list[Path] = []
 
 
 def default_registry_path() -> Path:
@@ -29,10 +36,10 @@ def load_registry(registry_path: Path | None = None) -> list[Path]:
     """Return the registered directories. A missing or broken file gives an empty list."""
     path = registry_path or default_registry_path()
     try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+        registry = RegistryFile.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
+    except (OSError, tomllib.TOMLDecodeError, ValidationError):
         return []
-    return [Path(p).expanduser() for p in data.get("dirs", []) if isinstance(p, str)]
+    return [directory.expanduser() for directory in registry.dirs]
 
 
 def _save_registry(dirs: list[Path], registry_path: Path) -> None:
