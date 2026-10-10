@@ -4,36 +4,36 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Final, Literal, Mapping
-from urllib.parse import urlparse
+from typing import ClassVar, Final, Literal, Mapping
+from urllib.parse import ParseResult, urlparse
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_VERSION: Final[str] = "2023-06-01"
 PASS: Final = "pass"
 FAIL: Final = "fail"
 SKIP: Final = "skip"
-_SUFFIX = re.compile(r"\[[^\]]*\]$")
+_SUFFIX: Final[re.Pattern[str]] = re.compile(r"\[[^\]]*\]$")
 
 
 class Check(BaseModel):
     """The result of one check: its name, pass/fail/skip, and a detail text."""
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     name: str
     status: Literal["pass", "fail", "skip"]
     detail: str = ""
 
 
-DEFAULT_BASE_URL = "https://api.anthropic.com"
-LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+DEFAULT_BASE_URL: Final[str] = "https://api.anthropic.com"
+LOCAL_HOSTS: Final[tuple[str, str, str]] = ("localhost", "127.0.0.1", "::1")
 
 
 class Endpoint(BaseModel):
     """The endpoint to test: URL, credentials, and the model name."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     base_url: str = DEFAULT_BASE_URL
     auth_token: str = ""
@@ -63,7 +63,7 @@ class Endpoint(BaseModel):
     @property
     def headers(self) -> dict[str, str]:
         """Build the request headers. A bearer token wins over an API key."""
-        headers = {"anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"}
+        headers: dict[str, str] = {"anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"}
         if self.auth_token:
             headers["authorization"] = f"Bearer {self.auth_token}"
         elif self.api_key:
@@ -92,42 +92,42 @@ def verify(
 
     The request goes only to the endpoint URL. The client never follows a redirect.
     """
-    parsed = urlparse(url=endpoint.base_url)
+    parsed: ParseResult = urlparse(url=endpoint.base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return [Check(name="url", status=FAIL, detail=f"'{endpoint.base_url}' is not a valid http or https URL.")]
-    detail = parsed.netloc
+    detail: str = parsed.netloc
     if parsed.scheme == "http" and parsed.hostname not in LOCAL_HOSTS:
         detail += " (warning: http sends the key without encryption)"
-    checks = [Check(name="url", status=PASS, detail=detail)]
+    checks: list[Check] = [Check(name="url", status=PASS, detail=detail)]
 
     if not endpoint.has_credentials:
         checks.append(Check(name="credentials", status=FAIL, detail="Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY."))
         return checks
 
-    own_client = client is None
-    client = client or httpx.Client(timeout=timeout, follow_redirects=False)
+    own_client: bool = client is None
+    http_client: httpx.Client = client or httpx.Client(timeout=timeout, follow_redirects=False)
     try:
-        checks.append(_check_models(client=client, endpoint=endpoint))
+        checks.append(_check_models(client=http_client, endpoint=endpoint))
         if checks[-1].status == FAIL:
             return checks
         if not endpoint.model:
             checks.append(Check(name="model", status=SKIP, detail="Set ANTHROPIC_MODEL to test the model name."))
         else:
-            checks.append(_check_message(client=client, endpoint=endpoint))
+            checks.append(_check_message(client=http_client, endpoint=endpoint))
     finally:
         if own_client:
-            client.close()
+            http_client.close()
     return checks
 
 
 def _check_models(client: httpx.Client, endpoint: Endpoint) -> Check:
     """Check the key with GET /v1/models."""
-    start = time.perf_counter()
+    start: float = time.perf_counter()
     try:
-        resp = client.get(url=f"{endpoint.base_url}/v1/models", headers=endpoint.headers)
+        resp: httpx.Response = client.get(url=f"{endpoint.base_url}/v1/models", headers=endpoint.headers)
     except httpx.HTTPError as exc:
         return Check(name="key", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
-    ms = int((time.perf_counter() - start) * 1000)
+    ms: int = int((time.perf_counter() - start) * 1000)
     if resp.status_code in (401, 403):
         return Check(name="key", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
     if resp.status_code in (404, 405):
@@ -145,23 +145,24 @@ def _check_models(client: httpx.Client, endpoint: Endpoint) -> Check:
 
 def _check_message(client: httpx.Client, endpoint: Endpoint) -> Check:
     """Check the model name with a one-token POST /v1/messages."""
-    body = {
-        "model": strip_model_suffix(model=endpoint.model),
+    requested_model: str = strip_model_suffix(model=endpoint.model)
+    body: dict[str, object] = {
+        "model": requested_model,
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "hi"}],
     }
-    start = time.perf_counter()
+    start: float = time.perf_counter()
     try:
-        resp = client.post(url=f"{endpoint.base_url}/v1/messages", headers=endpoint.headers, json=body)
+        resp: httpx.Response = client.post(url=f"{endpoint.base_url}/v1/messages", headers=endpoint.headers, json=body)
     except httpx.HTTPError as exc:
         return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
-    ms = int((time.perf_counter() - start) * 1000)
+    ms: int = int((time.perf_counter() - start) * 1000)
     if resp.status_code in (401, 403):
         return Check(name="model", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
     if resp.status_code >= 400:
         return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"HTTP {resp.status_code}: {resp.text[:200]}"))
     try:
-        name = resp.json().get("model", body["model"])
+        name: str = str(resp.json().get("model", requested_model))
     except ValueError:
-        name = body["model"]
+        name = requested_model
     return Check(name="model", status=PASS, detail=f"{name} answered in {ms} ms")

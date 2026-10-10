@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 import json
+import sys
 from pathlib import Path
+from typing import Final
 
 from platformdirs import user_config_dir
 from pydantic import BaseModel, ValidationError
@@ -14,8 +15,8 @@ if sys.version_info >= (3, 11):
 else:  # Python 3.10
     import tomli as tomllib
 
-APP_NAME = "claude-code-env-editor"
-REGISTRY_NAME = "dirs.toml"
+APP_NAME: Final[str] = "claude-code-env-editor"
+REGISTRY_NAME: Final[str] = "dirs.toml"
 
 
 class RegistryFile(BaseModel):
@@ -35,9 +36,9 @@ def default_registry_path() -> Path:
 
 def load_registry(registry_path: Path | None = None) -> list[Path]:
     """Return the registered directories. A missing or broken file gives an empty list."""
-    path = registry_path or default_registry_path()
+    path: Path = registry_path or default_registry_path()
     try:
-        registry = RegistryFile.model_validate(obj=tomllib.loads(path.read_text(encoding="utf-8")))
+        registry: RegistryFile = RegistryFile.model_validate(obj=tomllib.loads(path.read_text(encoding="utf-8")))
     except (OSError, tomllib.TOMLDecodeError, ValidationError):
         return []
     return [directory.expanduser() for directory in registry.dirs]
@@ -46,27 +47,27 @@ def load_registry(registry_path: Path | None = None) -> list[Path]:
 def _save_registry(dirs: list[Path], registry_path: Path) -> None:
     """Write the registry as a TOML list of strings."""
     registry_path.parent.mkdir(parents=True, exist_ok=True)
-    items = ",\n".join(f"  {json.dumps(obj=str(d))}" for d in dirs)
+    items: str = ",\n".join(f"  {json.dumps(obj=str(d))}" for d in dirs)
     registry_path.write_text(data=f"dirs = [\n{items}\n]\n" if dirs else "dirs = []\n", encoding="utf-8")
 
 
 def add_to_registry(directory: Path, registry_path: Path | None = None) -> bool:
     """Register a directory. Return False when it is already there."""
-    path = registry_path or default_registry_path()
-    directory = directory.expanduser().resolve()
-    dirs = load_registry(registry_path=path)
-    if directory in dirs:
+    path: Path = registry_path or default_registry_path()
+    resolved: Path = directory.expanduser().resolve()
+    dirs: list[Path] = load_registry(registry_path=path)
+    if resolved in dirs:
         return False
-    _save_registry(dirs=[*dirs, directory], registry_path=path)
+    _save_registry(dirs=[*dirs, resolved], registry_path=path)
     return True
 
 
 def remove_from_registry(directory: Path, registry_path: Path | None = None) -> bool:
     """Remove a directory. Return False when it was not registered."""
-    path = registry_path or default_registry_path()
-    directory = directory.expanduser().resolve()
-    dirs = load_registry(registry_path=path)
-    if directory not in dirs:
+    path: Path = registry_path or default_registry_path()
+    resolved: Path = directory.expanduser().resolve()
+    dirs: list[Path] = load_registry(registry_path=path)
+    if resolved not in dirs:
         return False
-    _save_registry(dirs=[d for d in dirs if d != directory], registry_path=path)
+    _save_registry(dirs=[d for d in dirs if d != resolved], registry_path=path)
     return True

@@ -1,5 +1,7 @@
 from pathlib import Path
+
 import pytest
+
 from claude_code_env_editor import registry
 
 
@@ -8,14 +10,14 @@ def test_missing_file_gives_empty_list(tmp_path: Path) -> None:
 
 
 def test_broken_file_gives_empty_list(tmp_path: Path) -> None:
-    path = tmp_path / "dirs.toml"
+    path: Path = tmp_path / "dirs.toml"
     path.write_text(data="dirs = [")
     assert registry.load_registry(registry_path=path) == []
 
 
 def test_add_and_remove(tmp_path: Path) -> None:
-    path = tmp_path / "cfg" / "dirs.toml"
-    target = tmp_path / "login"
+    path: Path = tmp_path / "cfg" / "dirs.toml"
+    target: Path = tmp_path / "login"
     target.mkdir()
     assert registry.add_to_registry(directory=target, registry_path=path) is True
     assert registry.add_to_registry(directory=target, registry_path=path) is False
@@ -26,8 +28,8 @@ def test_add_and_remove(tmp_path: Path) -> None:
 
 
 def test_path_with_quotes_and_backslashes_round_trips(tmp_path: Path) -> None:
-    path = tmp_path / "dirs.toml"
-    odd = tmp_path / 'a "b" \\c'
+    path: Path = tmp_path / "dirs.toml"
+    odd: Path = tmp_path / 'a "b" \\c'
     odd.mkdir()
     registry.add_to_registry(directory=odd, registry_path=path)
     assert registry.load_registry(registry_path=path) == [odd.resolve()]
@@ -40,6 +42,6 @@ def test_default_path_is_in_user_config_dir(monkeypatch: pytest.MonkeyPatch, tmp
 
 
 def test_wrong_type_gives_empty_list(tmp_path: Path) -> None:
-    path = tmp_path / "dirs.toml"
+    path: Path = tmp_path / "dirs.toml"
     path.write_text(data="dirs = 5")
     assert registry.load_registry(registry_path=path) == []

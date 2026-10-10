@@ -17,7 +17,7 @@ def test_preset_keys_are_in_catalog() -> None:
 
 
 def test_deepseek_preset_matches_documented_values() -> None:
-    v = preset_values(preset_id="deepseek")
+    v: dict[str, str] = preset_values(preset_id="deepseek")
     assert v["ANTHROPIC_MODEL"] == "deepseek-flash[1m]"
     assert v["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "786432"
     assert "ANTHROPIC_AUTH_TOKEN" not in v

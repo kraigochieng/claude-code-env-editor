@@ -3,6 +3,7 @@ from claude_code_env_editor.envvars import (
     SOURCE_ENV,
     SOURCE_SETTINGS,
     SOURCE_UNSET,
+    Row,
     mask,
     resolve,
     validate,
@@ -22,25 +23,25 @@ def test_mask_leaves_plain_value() -> None:
 
 
 def test_resolve_env_wins_over_settings() -> None:
-    rows = {r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={"ANTHROPIC_MODEL": "b"})}
+    rows: dict[str, Row] = {r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={"ANTHROPIC_MODEL": "b"})}
     assert rows["ANTHROPIC_MODEL"].value == "b"
     assert rows["ANTHROPIC_MODEL"].source == SOURCE_ENV
 
 
 def test_resolve_sources() -> None:
-    rows = {r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={})}
+    rows: dict[str, Row] = {r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={})}
     assert rows["ANTHROPIC_MODEL"].source == SOURCE_SETTINGS
     assert rows["API_TIMEOUT_MS"].source == SOURCE_UNSET
 
 
 def test_resolve_lists_custom_variable() -> None:
-    rows = {r.name: r for r in resolve(settings_env={"CLAUDE_CODE_NEW_THING": "1", "OTHER": "x"}, environ={})}
+    rows: dict[str, Row] = {r.name: r for r in resolve(settings_env={"CLAUDE_CODE_NEW_THING": "1", "OTHER": "x"}, environ={})}
     assert rows["CLAUDE_CODE_NEW_THING"].spec is None
     assert "OTHER" not in rows
 
 
 def test_secret_row_display_is_masked() -> None:
-    row = next(r for r in resolve(settings_env={"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}, environ={}) if r.secret)
+    row: Row = next(r for r in resolve(settings_env={"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}, environ={}) if r.secret)
     assert "0123456789" not in row.display
 
 

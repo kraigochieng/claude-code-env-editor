@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Final, Literal, Mapping
+from typing import ClassVar, Final, Literal, Mapping, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
-VarKind = Literal["string", "url", "secret", "integer", "choice"]
-Source = Literal["env", "settings", "unset"]
+VarKind: TypeAlias = Literal["string", "url", "secret", "integer", "choice"]
+Source: TypeAlias = Literal["env", "settings", "unset"]
 
 STRING: Final = "string"
 URL: Final = "url"
@@ -18,7 +18,7 @@ CHOICE: Final = "choice"
 
 class VarSpec(BaseModel):
     """The definition of one variable: name, type, help text, and an example value."""
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     name: str
     kind: VarKind
@@ -52,7 +52,7 @@ CATALOG: tuple[VarSpec, ...] = (
 )
 
 BY_NAME: dict[str, VarSpec] = {v.name: v for v in CATALOG}
-CUSTOM_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_")
+CUSTOM_PREFIXES: Final[tuple[str, str]] = ("ANTHROPIC_", "CLAUDE_CODE_")
 
 SOURCE_ENV: Final = "env"
 SOURCE_SETTINGS: Final = "settings"
@@ -81,7 +81,7 @@ def validate(spec: VarSpec, value: str) -> str | None:
 
 class Row(BaseModel):
     """One line of the variable table: the name, the value, and where the value comes from."""
-    model_config = ConfigDict(frozen=True)
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     name: str
     value: str
