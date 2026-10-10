@@ -50,3 +50,29 @@ def test_validate() -> None:
     assert validate(spec=BY_NAME["API_TIMEOUT_MS"], value="5000") is None
     assert validate(spec=BY_NAME["ANTHROPIC_BASE_URL"], value="example.com")
     assert validate(spec=BY_NAME["ANTHROPIC_BASE_URL"], value="https://example.com") is None
+
+
+def test_effort_level_is_a_choice_with_the_documented_values() -> None:
+    spec = BY_NAME["CLAUDE_CODE_EFFORT_LEVEL"]
+    assert spec.kind == "choice"
+    assert spec.choices == ("low", "medium", "high", "xhigh", "max", "auto")
+    assert validate(spec=spec, value="max") is None
+    assert validate(spec=spec, value="extreme") is not None
+
+
+def test_compact_window_range_and_plain_integer() -> None:
+    spec = BY_NAME["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]
+    assert validate(spec=spec, value="500000") is None
+    assert validate(spec=spec, value="99999") == "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be at least 100000."
+    assert validate(spec=spec, value="1000001") == "CLAUDE_CODE_AUTO_COMPACT_WINDOW must be at most 1000000."
+    message = validate(spec=spec, value="500k")
+    assert message is not None and "500000, not 500k" in message
+
+
+def test_every_preset_value_passes_validation() -> None:
+    from claude_code_env_editor.presets import load_presets
+
+    for preset_id, preset in load_presets().items():
+        for name, value in preset.variables.items():
+            if name in BY_NAME:
+                assert validate(spec=BY_NAME[name], value=value) is None, (preset_id, name)

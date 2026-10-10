@@ -25,6 +25,8 @@ class VarSpec(BaseModel):
     help: str
     example: str = ""
     choices: tuple[str, ...] = ()
+    minimum: int | None = None
+    maximum: int | None = None
     writable: bool = True
 
     @property
@@ -42,8 +44,21 @@ CATALOG: tuple[VarSpec, ...] = (
     VarSpec(name="ANTHROPIC_DEFAULT_SONNET_MODEL", kind=STRING, help="Model that the sonnet alias uses.", example="deepseek-flash[1m]"),
     VarSpec(name="ANTHROPIC_DEFAULT_HAIKU_MODEL", kind=STRING, help="Model that the haiku alias uses.", example="deepseek-flash"),
     VarSpec(name="CLAUDE_CODE_SUBAGENT_MODEL", kind=STRING, help="Model that subagents use.", example="deepseek-flash"),
-    VarSpec(name="CLAUDE_CODE_EFFORT_LEVEL", kind=STRING, help="Effort level for the model.", example="max"),
-    VarSpec(name="CLAUDE_CODE_AUTO_COMPACT_WINDOW", kind=INTEGER, help="Context size at which Claude Code compacts.", example="786432"),
+    VarSpec(
+        name="CLAUDE_CODE_EFFORT_LEVEL",
+        kind=CHOICE,
+        help="Effort level for the model. Available levels depend on the model. auto uses the model default.",
+        example="max",
+        choices=("low", "medium", "high", "xhigh", "max", "auto"),
+    ),
+    VarSpec(
+        name="CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        kind=INTEGER,
+        help="Context size in tokens at which Claude Code compacts. A plain integer, not 500k.",
+        example="786432",
+        minimum=100000,
+        maximum=1000000,
+    ),
     VarSpec(name="ANTHROPIC_SMALL_FAST_MODEL", kind=STRING, help="Older name for the fast model. Kept for compatibility.", example="deepseek-flash"),
     VarSpec(name="API_TIMEOUT_MS", kind=INTEGER, help="Request timeout in milliseconds.", example="600000"),
     VarSpec(name="CLAUDE_CONFIG_DIR", kind=STRING, help="Config directory of one Claude Code login. Not written to settings.json.", example="~/.claude-work",
@@ -70,8 +85,14 @@ def mask(value: str, secret: bool = True) -> str:
 
 def validate(spec: VarSpec, value: str) -> str | None:
     """Return an error text for a bad value, or None when the value is good."""
-    if spec.kind == INTEGER and not value.strip().isdigit():
-        return f"{spec.name} must be a whole number."
+    if spec.kind == INTEGER:
+        if not value.strip().isdigit():
+            return f"{spec.name} must be a whole number. Write 500000, not 500k."
+        number: int = int(value)
+        if spec.minimum is not None and number < spec.minimum:
+            return f"{spec.name} must be at least {spec.minimum}."
+        if spec.maximum is not None and number > spec.maximum:
+            return f"{spec.name} must be at most {spec.maximum}."
     if spec.kind == URL and not value.startswith(("http://", "https://")):
         return f"{spec.name} must start with http:// or https://."
     if spec.kind == CHOICE and spec.choices and value not in spec.choices:
