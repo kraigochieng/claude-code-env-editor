@@ -17,7 +17,7 @@ from textual.widgets.option_list import Option
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.envvars import SOURCE_UNSET, Row, mask, resolve, validate
 from claude_code_env_editor.presets import load_presets, preset_values
-from claude_code_env_editor.verify import FAIL, PASS, Check, target_host, verify
+from claude_code_env_editor.verify import FAIL, PASS, Check, Endpoint, verify
 
 HELP_KEYS = (
     ("e / enter", "Edit the selected variable"),
@@ -181,6 +181,10 @@ class EnvEditorApp(App):
                 table.move_cursor(row=names.index(keep))
         self.query_one("#banner", Static).update(self._banner())
 
+    def _endpoint(self) -> Endpoint:
+        """Build the endpoint from the values now in the table."""
+        return Endpoint.from_values({r.name: r.value for r in self.rows if r.value})
+
     def _banner(self) -> Text:
         """Build the banner text: version, config directory, and endpoint host."""
         t = Text()
@@ -189,8 +193,7 @@ class EnvEditorApp(App):
         t.append("config dir  ", style="dim")
         t.append(f"{self.config_dir}\n")
         t.append("endpoint    ", style="dim")
-        values = {r.name: r.value for r in self.rows if r.value}
-        t.append(target_host(values))
+        t.append(self._endpoint().host)
         return t
 
     def set_status(self, message: str, error: bool = False) -> None:
@@ -289,21 +292,21 @@ class EnvEditorApp(App):
 
     def action_verify(self) -> None:
         """Open the verify dialog and start the checks in a thread."""
-        values = {r.name: r.value for r in self.rows if r.value}
-        screen = TextScreen("Verify", Text(f"Sending requests to {target_host(values)} only...", style="dim"))
+        endpoint = self._endpoint()
+        screen = TextScreen("Verify", Text(f"Sending requests to {endpoint.host} only...", style="dim"))
         self.push_screen(screen)
-        self._run_verify(screen, values)
+        self._run_verify(screen, endpoint)
 
     @work(thread=True)
-    def _run_verify(self, screen: TextScreen, values: dict[str, str]) -> None:
+    def _run_verify(self, screen: TextScreen, endpoint: Endpoint) -> None:
         """Run the checks in a worker thread. Show the result in the dialog."""
-        checks = verify(values)
-        self.call_from_thread(screen.update_body, self._render_checks(checks, values))
+        checks = verify(endpoint)
+        self.call_from_thread(screen.update_body, self._render_checks(checks, endpoint))
 
     @staticmethod
-    def _render_checks(checks: list[Check], values: dict[str, str]) -> Text:
+    def _render_checks(checks: list[Check], endpoint: Endpoint) -> Text:
         """Format the check results as text for the dialog."""
-        body = Text(f"Host: {target_host(values)}\n\n", style="dim")
+        body = Text(f"Host: {endpoint.host}\n\n", style="dim")
         for c in checks:
             mark, style = {PASS: ("ok  ", "#7fb069"), FAIL: ("FAIL", "#e5534b")}.get(c.status, ("skip", "dim"))
             body.append(f"{mark}  ", style=style)
