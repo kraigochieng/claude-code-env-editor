@@ -18,6 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv venv --python ${{ matrix.python }}
       - run: uv pip install -e '.[dev]'
+      - run: .venv/bin/python -m mypy
       - run: .venv/bin/python -m pytest -q
       - run: sh -n install.sh
 

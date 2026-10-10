@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "commitizen>=3"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "commitizen>=3", "mypy>=1.10"]
 
 [project.scripts]
 claude-code-env-editor = "claude_code_env_editor.cli:main"
@@ -51,3 +51,9 @@ build_command = ""
 [tool.semantic_release.branches.main]
 match = "main"
 prerelease = false
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+files = ["src", "tests"]
+plugins = ["pydantic.mypy"]
