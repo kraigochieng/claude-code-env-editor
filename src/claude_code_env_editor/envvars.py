@@ -27,7 +27,6 @@ class VarSpec(BaseModel):
     choices: tuple[str, ...] = ()
     minimum: int | None = None
     maximum: int | None = None
-    writable: bool = True
 
     @property
     def secret(self) -> bool:
@@ -61,9 +60,6 @@ CATALOG: tuple[VarSpec, ...] = (
     ),
     VarSpec(name="ANTHROPIC_SMALL_FAST_MODEL", kind=STRING, help="Older name for the fast model. Kept for compatibility.", example="deepseek-flash"),
     VarSpec(name="API_TIMEOUT_MS", kind=INTEGER, help="Request timeout in milliseconds.", example="600000"),
-    VarSpec(name="CLAUDE_CONFIG_DIR", kind=STRING, help="Config directory of one Claude Code login. Not written to settings.json.", example="~/.claude-work",
-        writable=False,
-    ),
 )
 
 BY_NAME: dict[str, VarSpec] = {v.name: v for v in CATALOG}
@@ -108,6 +104,7 @@ class Row(BaseModel):
     value: str
     source: Source
     spec: VarSpec | None = None  # None for a custom variable
+    shell_value: str = ""  # a different value in the shell. Claude Code ignores it
 
     @property
     def secret(self) -> bool:
@@ -123,15 +120,27 @@ class Row(BaseModel):
 def resolve(settings_env: Mapping[str, str], environ: Mapping[str, str]) -> list[Row]:
     """List every known variable with its value and source.
 
-    The process environment wins over the settings.json env block.
+    The settings.json env block wins over the shell environment. I tested this with Claude Code:
+    a model in the env block overrides ANTHROPIC_MODEL exported in the shell. A different shell
+    value is kept in shell_value so the screen can say that Claude Code ignores it.
     Unknown ANTHROPIC_* and CLAUDE_CODE_* keys in settings.json show as custom rows.
     """
     rows: list[Row] = []
     for spec in CATALOG:
-        if spec.name in environ:
+        if spec.name in settings_env:
+            value: str = str(settings_env[spec.name])
+            shell: str = environ.get(spec.name, "")
+            rows.append(
+                Row(
+                    name=spec.name,
+                    value=value,
+                    source=SOURCE_SETTINGS,
+                    spec=spec,
+                    shell_value=shell if shell != value else "",
+                )
+            )
+        elif spec.name in environ:
             rows.append(Row(name=spec.name, value=environ[spec.name], source=SOURCE_ENV, spec=spec))
-        elif spec.name in settings_env:
-            rows.append(Row(name=spec.name, value=str(settings_env[spec.name]), source=SOURCE_SETTINGS, spec=spec))
         else:
             rows.append(Row(name=spec.name, value="", source=SOURCE_UNSET, spec=spec))
     for name, value in settings_env.items():

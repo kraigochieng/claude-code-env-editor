@@ -91,3 +91,14 @@ def test_no_write_secret_writes_nothing(tmp_path: Path, monkeypatch: pytest.Monk
 def test_set_secret_writes_settings_with_mode_0600(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run(["set", "ANTHROPIC_AUTH_TOKEN", "sk-0123456789abcdef"], tmp_path, monkeypatch)
     assert (tmp_path / "settings.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_set_refuses_the_config_dir_variable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert run(["set", "CLAUDE_CONFIG_DIR", "/x"], tmp_path, monkeypatch) == 2
+    assert not (tmp_path / "settings.json").exists()
+
+
+def test_config_dir_variable_is_not_in_the_catalog() -> None:
+    from claude_code_env_editor.envvars import BY_NAME
+
+    assert "CLAUDE_CONFIG_DIR" not in BY_NAME

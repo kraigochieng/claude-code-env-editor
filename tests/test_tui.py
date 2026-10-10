@@ -146,3 +146,33 @@ async def test_update_body_on_a_closed_dialog_does_nothing(tmp_path: Path) -> No
         await pilot.press("escape")
         await pilot.pause()
         screen.update_body(body=Text("y"))
+
+
+async def test_x_asks_before_removing_and_no_keeps_the_value(tmp_path: Path) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "m1"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        names: list[str] = [r.name for r in app.rows]
+        app.query_one(selector=DataTable).move_cursor(row=names.index("ANTHROPIC_MODEL"))
+        await pilot.press("x")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ConfirmScreen"
+        await pilot.press("n")
+        await pilot.pause()
+    assert json.loads((tmp_path / "settings.json").read_text())["env"] == {"ANTHROPIC_MODEL": "m1"}
+
+
+async def test_x_then_yes_removes_the_value(tmp_path: Path) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "m1"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        names: list[str] = [r.name for r in app.rows]
+        app.query_one(selector=DataTable).move_cursor(row=names.index("ANTHROPIC_MODEL"))
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+    assert "env" not in json.loads((tmp_path / "settings.json").read_text())
+    assert (tmp_path / "settings.json.bak").exists()

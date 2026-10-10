@@ -3,6 +3,36 @@
 A terminal UI to view, edit, and verify the Anthropic variables that Claude Code reads.
 Point Claude Code at another endpoint without hand-editing JSON or shell files.
 
+## What Claude Code already does
+
+Use Claude Code itself for these. This tool does not replace them.
+
+| Need | Claude Code feature |
+|---|---|
+| Switch the model | `/model` (picker or name), `--model`, `ANTHROPIC_MODEL`. `/model` saves your choice as the default. |
+| Change theme, editor mode, verbosity | `/config` (a short list of options, not every key) |
+| See which settings files loaded | `/status` (the `Setting sources` line) and `claude doctor` |
+
+## What this tool adds
+
+Claude Code has no menu for the `env` block of `settings.json`, and no command to test an endpoint.
+This tool gives you:
+
+- **Provider setup.** One preset sets the base URL, the model aliases, and the other variables together.
+- **Verify.** It checks the URL, the key, and the model name before you start a session, and explains a failure.
+- **The right key variable.** It shows `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` based on the base URL.
+- **Safe editing.** It validates values, masks secrets, and writes the file atomically with mode `0600`.
+- **Several logins.** It finds and switches config directories.
+
+Do not use this tool only to switch the model. `/model` does that better.
+
+## What this tool does not see
+
+The tool edits the user `settings.json` of one config directory. Claude Code also reads higher levels:
+managed settings, the `--settings` flag, `.claude/settings.local.json`, and `.claude/settings.json` in a project.
+A value there can override your `env` block, and this tool cannot see it. Run `/status` in Claude Code to see
+which files loaded.
+
 ## Install
 
 ```sh
@@ -43,7 +73,7 @@ claude-code-env-editor help set
 | `r` | Reveal or hide secrets |
 | `p` | Apply a preset |
 | `d` | Switch config directory |
-| `x` | Remove the variable |
+| `x` | Remove the variable (asks first) |
 | `?` | Help |
 | `q` | Quit |
 
@@ -100,12 +130,14 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 Run `claude-code-env-editor vars` for the full list: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`,
 `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`,
 `CLAUDE_CODE_SUBAGENT_MODEL`, `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_AUTO_COMPACT_WINDOW`,
-`ANTHROPIC_SMALL_FAST_MODEL`, `API_TIMEOUT_MS`, `CLAUDE_CONFIG_DIR`.
+`ANTHROPIC_SMALL_FAST_MODEL`, `API_TIMEOUT_MS`.
 `CLAUDE_CODE_EFFORT_LEVEL` takes one of `low`, `medium`, `high`, `xhigh`, `max`, or `auto`. The TUI shows a list for it.
 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` takes a plain integer from 100000 to 1000000 (not `500k`). The tool rejects other values.
 Other `ANTHROPIC_*` and `CLAUDE_CODE_*` keys in `settings.json` show as custom rows and are kept.
 
-The tool reads two sources. The process environment wins over the `env` block of `settings.json`.
+The tool reads two sources. The `env` block of `settings.json` wins over your shell. I tested this with Claude Code: a model
+in the `env` block overrides `ANTHROPIC_MODEL` exported in the shell. When the shell holds a different value, the table
+shows `settings (shell differs)`. Claude Code ignores the shell value.
 It writes only the `env` block. All other keys in the file stay as they were.
 
 ## Presets
