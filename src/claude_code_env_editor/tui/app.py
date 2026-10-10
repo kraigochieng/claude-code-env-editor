@@ -131,7 +131,8 @@ class TextScreen(ModalScreen[None]):
 
 class EnvEditorApp(App[None]):
     """The main screen: a table of variables and the actions on them."""
-    CSS_PATH: ClassVar[str] = "theme.tcss"
+    CSS_PATH: ClassVar[str] = "styles.tcss"
+    ENABLE_COMMAND_PALETTE: ClassVar[bool] = False
     TITLE: str = "claude-code-env-editor"
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="e,enter", action="edit", description="edit"),
