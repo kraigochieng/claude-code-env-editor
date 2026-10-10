@@ -14,11 +14,11 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from .. import __version__, config
-from ..envvars import SOURCE_UNSET, Row, mask, resolve, validate
-from ..presets import load_presets, preset_values
-from ..secrets import SecretStore
-from ..verify import FAIL, PASS, Check, target_host, verify
+from claude_code_env_editor import __version__, config
+from claude_code_env_editor.envvars import SOURCE_UNSET, Row, mask, resolve, validate
+from claude_code_env_editor.presets import load_presets, preset_values
+from claude_code_env_editor.secrets import SecretStore
+from claude_code_env_editor.verify import FAIL, PASS, Check, target_host, verify
 
 HELP_KEYS = (
     ("e / enter", "Edit the selected variable"),
