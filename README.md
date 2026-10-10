@@ -75,7 +75,7 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 ![Home page with the variable table](docs/screenshots/home.svg)
 
-**Edit.** Press `e` on a variable to change it. An empty value removes the key.
+**Edit.** Press `e` on a variable to change it. Paste with `Ctrl+Shift+V`. An empty value removes the key.
 
 ![Edit dialog for one variable](docs/screenshots/edit.svg)
 
