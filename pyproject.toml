@@ -40,3 +40,14 @@ testpaths = ["tests"]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
+
+[tool.semantic_release]
+allow_zero_version = true
+major_on_zero = false
+tag_format = "v{version}"
+commit_parser = "conventional"
+build_command = ""
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
