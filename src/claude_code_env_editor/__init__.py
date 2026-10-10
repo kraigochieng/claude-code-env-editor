@@ -5,4 +5,4 @@ try:
 except ImportError:  # running from a source tree without a build
     __version__ = "0.0.0+unknown"
 
-__all__ = ["__version__"]
+__all__: list[str] = ["__version__"]

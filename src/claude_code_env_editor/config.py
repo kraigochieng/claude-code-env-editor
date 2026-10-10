@@ -6,13 +6,13 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Mapping
+from typing import ClassVar, Final, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from claude_code_env_editor.registry import load_registry
 
-SETTINGS_NAME = "settings.json"
+SETTINGS_NAME: Final[str] = "settings.json"
 
 
 class ConfigError(Exception):
@@ -22,7 +22,7 @@ class ConfigError(Exception):
 class Settings(BaseModel):
     """The content of settings.json. Only the env block is known. All other keys are kept as they are."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="allow")
 
     env: dict[str, str] = Field(default_factory=dict)
 
@@ -36,7 +36,7 @@ class Settings(BaseModel):
 
     def to_json_dict(self) -> dict[str, object]:
         """Return the JSON content: the unknown keys first, then env. An empty env is left out."""
-        content = dict(self.model_extra or {})
+        content: dict[str, object] = dict(self.model_extra or {})
         if self.env:
             content["env"] = self.env
         return content
@@ -44,9 +44,9 @@ class Settings(BaseModel):
 
 def default_config_dir(environ: Mapping[str, str] | None = None, home: Path | None = None) -> Path:
     """Return the config directory: $CLAUDE_CONFIG_DIR if set, else ~/.claude."""
-    environ = os.environ if environ is None else environ
-    if environ.get("CLAUDE_CONFIG_DIR"):
-        return Path(environ["CLAUDE_CONFIG_DIR"]).expanduser()
+    env: Mapping[str, str] = os.environ if environ is None else environ
+    if env.get("CLAUDE_CONFIG_DIR"):
+        return Path(env["CLAUDE_CONFIG_DIR"]).expanduser()
     return (home or Path.home()) / ".claude"
 
 
@@ -63,7 +63,7 @@ def scan_home_for_config_dirs(home: Path) -> list[Path]:
     The name does not matter. Only the files inside decide.
     """
     try:
-        children = sorted(home.iterdir())
+        children: list[Path] = sorted(home.iterdir())
     except OSError:
         return []
     return [p for p in children if p.name.startswith(".") and p.is_dir() and looks_like_config_dir(directory=p)]
@@ -78,10 +78,10 @@ def discover_config_dirs(
 
     A directory shows once. The order is the order of the sources.
     """
-    home = home or Path.home()
-    found: list[Path] = [default_config_dir(environ=environ, home=home)]
+    home_dir: Path = home or Path.home()
+    found: list[Path] = [default_config_dir(environ=environ, home=home_dir)]
     found += load_registry(registry_path=registry_path)
-    found += scan_home_for_config_dirs(home=home)
+    found += scan_home_for_config_dirs(home=home_dir)
     unique: list[Path] = []
     for directory in found:
         if directory not in unique:
@@ -96,11 +96,11 @@ def settings_path(config_dir: Path) -> Path:
 
 def load_settings(config_dir: Path) -> Settings:
     """Read settings.json. Return empty settings when the file is missing."""
-    path = settings_path(config_dir=config_dir)
+    path: Path = settings_path(config_dir=config_dir)
     if not path.exists():
         return Settings()
     try:
-        data = json.loads(s=path.read_text(encoding="utf-8") or "{}")
+        data: object = json.loads(s=path.read_text(encoding="utf-8") or "{}")
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path} is not valid JSON: {exc.msg} (line {exc.lineno}).") from exc
     try:
@@ -120,17 +120,17 @@ def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
     The write is atomic. The old file is kept as settings.json.bak. The mode is 0600.
     All other keys in the file stay as they were.
     """
-    settings = load_settings(config_dir=config_dir)
+    settings: Settings = load_settings(config_dir=config_dir)
     for key, value in updates.items():
         if value is None:
             settings.env.pop(key, None)
         else:
             settings.env[key] = value
 
-    path = settings_path(config_dir=config_dir)
+    path: Path = settings_path(config_dir=config_dir)
     config_dir.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        backup = path.with_name(name=path.name + ".bak")
+        backup: Path = path.with_name(name=path.name + ".bak")
         backup.write_bytes(data=path.read_bytes())
         os.chmod(path=backup, mode=0o600)
     fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".tmp")
