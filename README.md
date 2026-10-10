@@ -84,7 +84,14 @@ claude-code-env-editor --config-dir ~/.claude-personal show
 claude-code-env-editor --config-dir ~/.claude-personal preset deepseek
 ```
 
-Inside the TUI press `d` to switch between the `~/.claude*` directories.
+The tool finds config directories from three sources. The name does not matter.
+- The default: `$CLAUDE_CONFIG_DIR`, or `~/.claude`.
+- The registry: directories you add with `claude-code-env-editor dirs add PATH`. The registry file is
+  `dirs.toml` in the user config dir of your OS (`$XDG_CONFIG_HOME` on Linux, `~/Library/Application Support`
+  on macOS, `%APPDATA%` on Windows).
+- A scan: hidden directories in your home that hold `.claude.json`, or `settings.json` and a `projects` directory.
+
+Run `claude-code-env-editor dirs` to list them. Inside the TUI press `d` to switch between them.
 
 ## Security
 
