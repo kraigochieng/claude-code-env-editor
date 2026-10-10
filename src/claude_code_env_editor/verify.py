@@ -51,7 +51,7 @@ class Endpoint(BaseModel):
     @property
     def host(self) -> str:
         """Return the host that the requests go to."""
-        return urlparse(self.base_url).netloc
+        return urlparse(url=self.base_url).netloc
 
     @property
     def has_credentials(self) -> bool:
@@ -78,7 +78,7 @@ class Endpoint(BaseModel):
 
 def strip_model_suffix(model: str) -> str:
     """Remove a Claude Code suffix such as [1m] before the model goes to the endpoint."""
-    return _SUFFIX.sub("", model)
+    return _SUFFIX.sub(repl="", string=model)
 
 
 def verify(
@@ -90,7 +90,7 @@ def verify(
 
     The request goes only to the endpoint URL. The client never follows a redirect.
     """
-    parsed = urlparse(endpoint.base_url)
+    parsed = urlparse(url=endpoint.base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return [Check(name="url", status=FAIL, detail=f"'{endpoint.base_url}' is not a valid http or https URL.")]
     detail = parsed.netloc
@@ -105,13 +105,13 @@ def verify(
     own_client = client is None
     client = client or httpx.Client(timeout=timeout, follow_redirects=False)
     try:
-        checks.append(_check_models(client, endpoint))
+        checks.append(_check_models(client=client, endpoint=endpoint))
         if checks[-1].status == FAIL:
             return checks
         if not endpoint.model:
             checks.append(Check(name="model", status=SKIP, detail="Set ANTHROPIC_MODEL to test the model name."))
         else:
-            checks.append(_check_message(client, endpoint))
+            checks.append(_check_message(client=client, endpoint=endpoint))
     finally:
         if own_client:
             client.close()
@@ -122,9 +122,9 @@ def _check_models(client: httpx.Client, endpoint: Endpoint) -> Check:
     """Check the key with GET /v1/models."""
     start = time.perf_counter()
     try:
-        resp = client.get(f"{endpoint.base_url}/v1/models", headers=endpoint.headers)
+        resp = client.get(url=f"{endpoint.base_url}/v1/models", headers=endpoint.headers)
     except httpx.HTTPError as exc:
-        return Check(name="key", status=FAIL, detail=endpoint.redact(f"{type(exc).__name__}: {exc}"))
+        return Check(name="key", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
     ms = int((time.perf_counter() - start) * 1000)
     if resp.status_code in (401, 403):
         return Check(name="key", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
@@ -144,20 +144,20 @@ def _check_models(client: httpx.Client, endpoint: Endpoint) -> Check:
 def _check_message(client: httpx.Client, endpoint: Endpoint) -> Check:
     """Check the model name with a one-token POST /v1/messages."""
     body = {
-        "model": strip_model_suffix(endpoint.model),
+        "model": strip_model_suffix(model=endpoint.model),
         "max_tokens": 1,
         "messages": [{"role": "user", "content": "hi"}],
     }
     start = time.perf_counter()
     try:
-        resp = client.post(f"{endpoint.base_url}/v1/messages", headers=endpoint.headers, json=body)
+        resp = client.post(url=f"{endpoint.base_url}/v1/messages", headers=endpoint.headers, json=body)
     except httpx.HTTPError as exc:
-        return Check(name="model", status=FAIL, detail=endpoint.redact(f"{type(exc).__name__}: {exc}"))
+        return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
     ms = int((time.perf_counter() - start) * 1000)
     if resp.status_code in (401, 403):
         return Check(name="model", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
     if resp.status_code >= 400:
-        return Check(name="model", status=FAIL, detail=endpoint.redact(f"HTTP {resp.status_code}: {resp.text[:200]}"))
+        return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"HTTP {resp.status_code}: {resp.text[:200]}"))
     try:
         name = resp.json().get("model", body["model"])
     except ValueError:

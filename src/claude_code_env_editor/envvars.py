@@ -88,7 +88,7 @@ class Row(BaseModel):
     @property
     def display(self) -> str:
         """Return the value as shown on screen, with secrets masked."""
-        return mask(self.value, self.secret) if self.value else ""
+        return mask(value=self.value, secret=self.secret) if self.value else ""
 
 
 def resolve(settings_env: Mapping[str, str], environ: Mapping[str, str]) -> list[Row]:

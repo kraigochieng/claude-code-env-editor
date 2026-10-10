@@ -40,7 +40,7 @@ def test_wrong_command_exits_nonzero(capsys):
 
 def test_set_and_show_masks_nothing_for_plain(tmp_path, monkeypatch, capsys):
     assert run(["set", "ANTHROPIC_MODEL", "m1"], tmp_path, monkeypatch) == 0
-    assert json.loads((tmp_path / "settings.json").read_text())["env"] == {"ANTHROPIC_MODEL": "m1"}
+    assert json.loads(s=(tmp_path / "settings.json").read_text())["env"] == {"ANTHROPIC_MODEL": "m1"}
     run(["show"], tmp_path, monkeypatch)
     assert "m1" in capsys.readouterr().out
 
@@ -55,7 +55,7 @@ def test_set_secret_does_not_print_it(tmp_path, monkeypatch, capsys):
 
 
 def test_show_masks_secret_unless_reveal(tmp_path, monkeypatch, capsys):
-    (tmp_path / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}}))
+    (tmp_path / "settings.json").write_text(data=json.dumps(obj={"env": {"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}}))
     run(["show"], tmp_path, monkeypatch)
     assert "0123456789" not in capsys.readouterr().out
     run(["show", "--reveal"], tmp_path, monkeypatch)
@@ -64,7 +64,7 @@ def test_show_masks_secret_unless_reveal(tmp_path, monkeypatch, capsys):
 
 def test_preset_applies(tmp_path, monkeypatch):
     assert run(["preset", "deepseek"], tmp_path, monkeypatch) == 0
-    env = json.loads((tmp_path / "settings.json").read_text())["env"]
+    env = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
     assert env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
 
 
@@ -78,7 +78,7 @@ def test_export_format(tmp_path, monkeypatch, capsys):
 def test_unset(tmp_path, monkeypatch):
     run(["set", "ANTHROPIC_MODEL", "m1"], tmp_path, monkeypatch)
     run(["unset", "ANTHROPIC_MODEL"], tmp_path, monkeypatch)
-    assert json.loads((tmp_path / "settings.json").read_text()) == {}
+    assert json.loads(s=(tmp_path / "settings.json").read_text()) == {}
 
 
 def test_no_write_secret_writes_nothing(tmp_path, monkeypatch, capsys):
