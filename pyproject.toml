@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "commitizen>=3", "mypy>=1.10"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "commitizen>=3", "mypy>=1.10", "ruff>=0.6"]
 
 [project.scripts]
 claude-code-env-editor = "claude_code_env_editor.cli:main"
@@ -56,3 +56,11 @@ prerelease = false
 strict = true
 files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["src/claude_code_env_editor/_version.py"]
+
+[tool.ruff.lint]
+select = ["F", "I", "ANN"]

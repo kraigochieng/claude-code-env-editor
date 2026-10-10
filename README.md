@@ -120,6 +120,8 @@ breaks existing files is a breaking change. See the [releases](https://github.co
 
 ```sh
 uv venv && uv pip install -e '.[dev]'
+.venv/bin/python -m ruff check
+.venv/bin/python -m mypy
 .venv/bin/python -m pytest
 ```
 
