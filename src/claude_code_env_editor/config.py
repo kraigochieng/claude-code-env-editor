@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
 from typing import ClassVar, Final, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from claude_code_env_editor.files import atomic_write_text
 from claude_code_env_editor.registry import load_registry
 
 SETTINGS_NAME: Final[str] = "settings.json"
@@ -148,19 +148,6 @@ def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
             settings.env[key] = value
 
     path: Path = settings_path(config_dir=config_dir)
-    config_dir.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        backup: Path = path.with_name(name=path.name + ".bak")
-        backup.write_bytes(data=path.read_bytes())
-        os.chmod(path=backup, mode=0o600)
-    fd, tmp = tempfile.mkstemp(dir=config_dir, prefix=".settings-", suffix=".tmp")
-    try:
-        with os.fdopen(fd=fd, mode="w", encoding="utf-8") as handle:
-            json.dump(obj=settings.to_json_dict(), fp=handle, indent=2)
-            handle.write("\n")
-        os.chmod(path=tmp, mode=0o600)
-        os.replace(src=tmp, dst=path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    text: str = json.dumps(obj=settings.to_json_dict(), indent=2) + "\n"
+    atomic_write_text(path=path, text=text, keep_backup=True)
     return path
