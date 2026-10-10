@@ -27,7 +27,6 @@ class VarSpec(BaseModel):
     choices: tuple[str, ...] = ()
     minimum: int | None = None
     maximum: int | None = None
-    writable: bool = True
 
     @property
     def secret(self) -> bool:
@@ -61,9 +60,6 @@ CATALOG: tuple[VarSpec, ...] = (
     ),
     VarSpec(name="ANTHROPIC_SMALL_FAST_MODEL", kind=STRING, help="Older name for the fast model. Kept for compatibility.", example="deepseek-flash"),
     VarSpec(name="API_TIMEOUT_MS", kind=INTEGER, help="Request timeout in milliseconds.", example="600000"),
-    VarSpec(name="CLAUDE_CONFIG_DIR", kind=STRING, help="Config directory of one Claude Code login. Not written to settings.json.", example="~/.claude-work",
-        writable=False,
-    ),
 )
 
 BY_NAME: dict[str, VarSpec] = {v.name: v for v in CATALOG}

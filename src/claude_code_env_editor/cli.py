@@ -30,6 +30,7 @@ from claude_code_env_editor.registry import (
 )
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
+CONFIG_DIR_VARIABLE: Final[str] = "CLAUDE_CONFIG_DIR"
 PROG: Final[str] = "claude-code-env-editor"
 EPILOG: Final[str] = f"Run '{PROG} help <command>' for the help of one command."
 MARKS: Final[dict[str, str]] = {PASS: "ok  ", FAIL: "FAIL", SKIP: "skip"}
@@ -149,7 +150,7 @@ def _read_secret(name: str) -> str:
 def cmd_set(args: argparse.Namespace) -> int:
     """Set one variable in settings.json, or print an export line for --no-write-secret."""
     spec: VarSpec | None = BY_NAME.get(args.name)
-    if spec and not spec.writable:
+    if args.name == CONFIG_DIR_VARIABLE:
         print(f"{args.name} selects the config directory. Use --config-dir or set it in your shell.", file=sys.stderr)
         return 2
     value: str | None = args.value
@@ -211,7 +212,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 def cmd_export(args: argparse.Namespace) -> int:
     """Print 'export NAME=value' lines for the variables that have a value."""
     for row in resolve(settings_env=config.load_env(config_dir=_chosen_config_dir(args=args)), environ=os.environ):
-        if row.source == SOURCE_UNSET or not row.spec or not row.spec.writable:
+        if row.source == SOURCE_UNSET or not row.spec:
             continue
         value: str = row.value if args.reveal else row.display
         print(f"export {row.name}={_shell_quote(value=value)}")

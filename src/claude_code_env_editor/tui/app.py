@@ -241,9 +241,6 @@ class EnvEditorApp(App[None]):
         row: Row | None = self.selected()
         if row is None:
             return
-        if row.spec and not row.spec.writable:
-            self.set_status(message=f"{row.name} selects the config directory. Use the d key.", error=True)
-            return
 
         def save_edited_value(value: str | None) -> None:
             """Save the new value. An empty value removes the key."""
