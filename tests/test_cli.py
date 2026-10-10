@@ -18,7 +18,7 @@ def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "usage" in capsys.readouterr().out.lower()
 
 
-@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "preset", "verify", "export", "vars", "help", "self-update", "self-uninstall", "dirs"])
+@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "preset", "verify", "export", "vars", "help", "self-update", "self-uninstall", "dirs", "profile"])
 def test_every_command_has_help(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         cli.main([command, "--help"])
@@ -102,3 +102,63 @@ def test_config_dir_variable_is_not_in_the_catalog() -> None:
     from claude_code_env_editor.envvars import BY_NAME
 
     assert "CLAUDE_CONFIG_DIR" not in BY_NAME
+
+
+@pytest.fixture
+def profiles_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the tool at a profiles file in a temporary directory."""
+    path: Path = tmp_path / "tool" / "profiles.toml"
+    monkeypatch.setattr("claude_code_env_editor.profiles.default_profiles_path", lambda: path)
+    return path
+
+
+def test_profile_list_shows_builtin_profiles(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["profile"], tmp_path, monkeypatch) == 0
+    out: str = capsys.readouterr().out
+    assert "deepseek" in out and "built-in" in out and "api.deepseek.com" in out
+
+
+def test_profile_save_show_masks_the_key_and_delete(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings: Path = tmp_path / "settings.json"
+    settings.write_text(
+        json.dumps(
+            {"env": {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}}
+        )
+    )
+    assert run(["profile", "save", "work"], tmp_path, monkeypatch) == 0
+    assert "with a key" in capsys.readouterr().out
+    assert run(["profile", "show", "work"], tmp_path, monkeypatch) == 0
+    shown: str = capsys.readouterr().out
+    assert "0123456789" not in shown and "api.deepseek.com" in shown
+    assert run(["profile", "show", "work", "--reveal"], tmp_path, monkeypatch) == 0
+    assert "sk-0123456789abcdef" in capsys.readouterr().out
+    assert run(["profile", "delete", "work", "--yes"], tmp_path, monkeypatch) == 0
+    assert run(["profile", "show", "work"], tmp_path, monkeypatch) == 1
+
+
+def test_profile_save_without_key_and_copy_of_a_builtin(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["profile", "save", "mine", "--from", "deepseek", "--note", "my copy"], tmp_path, monkeypatch) == 0
+    assert "without a key" in capsys.readouterr().out
+    assert run(["profile", "save", "mine", "--from", "deepseek"], tmp_path, monkeypatch) == 1
+    assert "--force" in capsys.readouterr().err
+    assert run(["profile", "save", "mine", "--from", "deepseek", "--force"], tmp_path, monkeypatch) == 0
+
+
+def test_profile_save_with_nothing_to_save_is_refused(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run(["profile", "save", "empty"], tmp_path, monkeypatch) == 2
+
+
+def test_profile_delete_needs_yes_without_a_terminal(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert run(["profile", "save", "mine", "--from", "deepseek"], tmp_path, monkeypatch) == 0
+    assert run(["profile", "delete", "mine"], tmp_path, monkeypatch) == 1
+    assert run(["profile", "delete", "deepseek", "--yes"], tmp_path, monkeypatch) == 2

@@ -77,6 +77,28 @@ claude-code-env-editor help set
 | `?` | Help |
 | `q` | Quit |
 
+## Profiles
+
+A profile is a name and a set of known variables, for example the base URL, the model aliases, and the key.
+Built-in profiles come from the presets and are read-only. Your own profiles live in `profiles.toml`
+in the config directory of this tool (`dirs.toml` is there too).
+
+```sh
+claude-code-env-editor profile                      # list built-in profiles and yours
+claude-code-env-editor profile show deepseek        # print the variables (keys masked, --reveal shows them)
+claude-code-env-editor profile save work-ds         # save the current values of the target
+claude-code-env-editor profile save mine --from deepseek --note "my copy"
+claude-code-env-editor profile save shared --no-key # leave the key out
+claude-code-env-editor profile delete work-ds       # asks first, or use --yes
+```
+
+- A name has letters, digits, `.`, `-`, and `_`. A built-in name cannot be replaced.
+- Only variables that the tool knows are allowed. A profiles file cannot set `PATH` or `LD_PRELOAD`.
+- **A profile can hold a key.** `profiles.toml` is written with mode `0600`, in a directory with mode `0700`,
+  and a `.gitignore` lists it. It is a second plaintext copy of the key, as exposed as `settings.json`.
+  Do not commit or share this file. Use `--no-key` for a profile that you want to share.
+- A broken `profiles.toml` gives an error. The tool never overwrites a file that it cannot read.
+
 ## Which key variable to set
 
 The two secret variables use different HTTP headers. I tested this with Claude Code, a fake local server, and fake keys.

@@ -23,6 +23,15 @@ from claude_code_env_editor.envvars import (
     validate,
 )
 from claude_code_env_editor.presets import Preset, load_presets, preset_values
+from claude_code_env_editor.profiles import (
+    Profile,
+    ProfileError,
+    all_profiles,
+    delete_profile,
+    get_profile,
+    save_profile,
+    snapshot,
+)
 from claude_code_env_editor.registry import (
     add_to_registry,
     load_registry,
@@ -111,6 +120,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = add_command(name="dirs", help_="List, add, or remove config directories.", example=f"{PROG} dirs add ~/work/claude-login")
     p.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
     p.add_argument("path", nargs="?", type=Path, help="Directory for add or remove.")
+
+    p = add_command(
+        name="profile",
+        help_="List, show, save, or delete profiles (named sets of variables).",
+        example=f"{PROG} profile save work-deepseek --from deepseek",
+    )
+    _add_dir(p)
+    p.add_argument("action", nargs="?", choices=["list", "show", "save", "delete"], default="list")
+    p.add_argument("name", nargs="?", help="Profile name for show, save, or delete.")
+    p.add_argument("--from", dest="source", metavar="PROFILE", help="With save: copy this profile (built-in or yours).")
+    p.add_argument("--no-key", action="store_true", help="With save: leave the key out of the profile.")
+    p.add_argument("--note", default="", help="With save: a note to store with the profile.")
+    p.add_argument("--force", action="store_true", help="With save: replace a profile of the same name.")
+    p.add_argument("--reveal", action="store_true", help="With show: print keys in full.")
+    p.add_argument("--yes", action="store_true", help="With delete: do not ask first.")
 
     p = add_command(name="help", help_="Show the help of the tool or of one command.", example=f"{PROG} help set")
     p.add_argument("topic", nargs="?", metavar="<command>")
@@ -250,6 +274,61 @@ def cmd_dirs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ask_yes(question: str) -> bool:
+    """Ask a yes or no question on the terminal. Return False when no terminal is attached."""
+    if not sys.stdin.isatty():
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    """List, show, save, or delete profiles."""
+    if args.action == "list":
+        for entry in all_profiles().values():
+            kind: str = "built-in" if entry.builtin else "yours"
+            key: str = "key" if entry.has_key else "no key"
+            print(f"{entry.name:<20} {kind:<9} {entry.host:<28} {key:<7} {entry.note}")
+        return 0
+    if args.name is None:
+        print(f"Give a profile name: {PROG} profile {args.action} NAME", file=sys.stderr)
+        return 2
+    if args.action == "show":
+        profile: Profile = get_profile(name=args.name)
+        print(f"{profile.name}  ({'built-in' if profile.builtin else 'yours'})  {profile.note}".rstrip())
+        for name, value in profile.variables.items():
+            secret: bool = BY_NAME[name].secret
+            print(f"  {name:<34} {value if args.reveal else mask(value=value, secret=secret)}")
+        return 0
+    if args.action == "save":
+        if args.source:
+            base: Profile = get_profile(name=args.source)
+            variables: dict[str, str] = dict(base.variables)
+            note: str = args.note or base.note
+            result: Profile = Profile(name=args.name, variables=variables, note=note)
+            if args.no_key:
+                result = snapshot(name=args.name, env=variables, include_keys=False, note=note)
+        else:
+            env: dict[str, str] = config.load_env(settings_file=_chosen_target(args=args).settings_file)
+            result = snapshot(name=args.name, env=env, include_keys=not args.no_key, note=args.note)
+        if not result.variables:
+            print("There are no known variables to save. Set some first.", file=sys.stderr)
+            return 2
+        path: Path = save_profile(profile=result, overwrite=args.force)
+        key_text: str = "with a key" if result.has_key else "without a key"
+        print(f"Saved profile '{args.name}' ({len(result.variables)} variables, {key_text}) in {path}")
+        return 0
+    target_profile: Profile = get_profile(name=args.name)
+    if target_profile.builtin:
+        print(f"'{args.name}' is a built-in profile and cannot be deleted.", file=sys.stderr)
+        return 2
+    if not args.yes and not _ask_yes(question=f"Delete profile '{args.name}'?"):
+        print("Nothing deleted. Use --yes to delete without a question.", file=sys.stderr)
+        return 1
+    delete_profile(name=args.name)
+    print(f"Deleted profile '{args.name}'.")
+    return 0
+
+
 def cmd_vars(args: argparse.Namespace) -> int:
     """List every variable in the catalog with its type and meaning."""
     for spec in CATALOG:
@@ -309,13 +388,14 @@ def main(argv: list[str] | None = None) -> int:
         "export": cmd_export,
         "vars": cmd_vars,
         "dirs": cmd_dirs,
+        "profile": cmd_profile,
         "tui": cmd_tui,
         "self-update": cmd_self_update,
         "self-uninstall": cmd_self_uninstall,
     }[args.command]
     try:
         return handler(args)
-    except config.ConfigError as exc:
+    except (config.ConfigError, ProfileError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
