@@ -1,6 +1,75 @@
 # CHANGELOG
 
 
+## v0.3.1 (2026-10-10)
+
+### Bug Fixes
+
+- **ci**: Check types with the python version that runs mypy
+  ([`2e3daf7`](https://github.com/kraigochieng/claude-code-env-editor/commit/2e3daf7f2b6396fa153169264cf7d4ccf51fd7cc))
+
+A pinned python_version made mypy look for tomli on Python 3.12.
+
+Refs #17
+
+### Continuous Integration
+
+- Check types with mypy in strict mode
+  ([`cd266d5`](https://github.com/kraigochieng/claude-code-env-editor/commit/cd266d5ded1e37e6d1a4e66f1a82e149a72ad22c))
+
+Closes #17
+
+### Refactoring
+
+- Add explicit type hints to all functions in src
+  ([`0143b5e`](https://github.com/kraigochieng/claude-code-env-editor/commit/0143b5e385f4382f5b4801fdd7aff8f7e30b67ab))
+
+Final constants, a typed Namespace for the command handlers, and the App type argument remove the
+  last implicit types.
+
+Refs #17
+
+- Name the arguments in function calls
+  ([`d923372`](https://github.com/kraigochieng/claude-code-env-editor/commit/d9233728a9f416a0a4916c37d9d7346bc123b19a))
+
+Calls to project functions and to library functions that accept keywords now use named arguments.
+  Positional-only built-ins and *args parameters stay as they were.
+
+Refs #15
+
+- **config**: Read and write settings.json through a pydantic Settings model
+  ([`13428d7`](https://github.com/kraigochieng/claude-code-env-editor/commit/13428d743989a5fe89cdfb0a4b7ebf25904f9581))
+
+Refs #13
+
+- **envvars**: Use pydantic models for VarSpec and Row
+  ([`532ca24`](https://github.com/kraigochieng/claude-code-env-editor/commit/532ca24df0c6a982c63ea52e9030a1736cb29aa2))
+
+Refs #13
+
+- **presets**: Load presets as pydantic Preset models
+  ([`b069e47`](https://github.com/kraigochieng/claude-code-env-editor/commit/b069e47d47d7c3438bb5acb75969ea1e8cc03398))
+
+Refs #13
+
+- **registry**: Read dirs.toml through a pydantic model
+  ([`7c95a2a`](https://github.com/kraigochieng/claude-code-env-editor/commit/7c95a2a48df30d4d9811b4cfb6673968940b9bf2))
+
+Refs #13
+
+- **verify**: Model checks and the endpoint with pydantic
+  ([`ab5f789`](https://github.com/kraigochieng/claude-code-env-editor/commit/ab5f7893f958b08c9479f03065e72b15d5208909))
+
+Closes #13
+
+### Testing
+
+- Add type hints to all test functions and helpers
+  ([`c90a1fa`](https://github.com/kraigochieng/claude-code-env-editor/commit/c90a1fa4f3f7ca64475e437e8cef987cbfd89bf8))
+
+Refs #17
+
+
 ## v0.3.0 (2026-10-10)
 
 ### Documentation
