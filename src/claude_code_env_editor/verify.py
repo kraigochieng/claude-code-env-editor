@@ -72,11 +72,11 @@ class Endpoint(BaseModel):
 
     @property
     def headers(self) -> dict[str, str]:
-        """Build the request headers. A bearer token wins over an API key."""
+        """Build the request headers. Claude Code sends both headers when both variables are set."""
         headers: dict[str, str] = {"anthropic-version": ANTHROPIC_VERSION, "content-type": "application/json"}
         if self.auth_token:
             headers["authorization"] = f"Bearer {self.auth_token}"
-        elif self.api_key:
+        if self.api_key:
             headers["x-api-key"] = self.api_key
         return headers
 

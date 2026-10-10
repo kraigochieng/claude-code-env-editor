@@ -35,8 +35,13 @@ def test_strip_model_suffix() -> None:
     assert strip_model_suffix(model="plain") == "plain"
 
 
-def test_auth_headers_prefer_bearer() -> None:
+def test_auth_headers_send_both_when_both_are_set() -> None:
     h: dict[str, str] = Endpoint.from_values(values={"ANTHROPIC_AUTH_TOKEN": "t", "ANTHROPIC_API_KEY": "k"}).headers
+    assert h["authorization"] == "Bearer t" and h["x-api-key"] == "k"
+
+
+def test_auth_headers_bearer_only() -> None:
+    h: dict[str, str] = Endpoint.from_values(values={"ANTHROPIC_AUTH_TOKEN": "t"}).headers
     assert h["authorization"] == "Bearer t" and "x-api-key" not in h
 
 
