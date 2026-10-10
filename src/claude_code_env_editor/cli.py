@@ -10,6 +10,7 @@ from pathlib import Path
 
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.envvars import BY_NAME, CATALOG, SOURCE_UNSET, mask, resolve, validate
+from claude_code_env_editor.registry import add_to_registry, load_registry, remove_from_registry
 from claude_code_env_editor.presets import load_presets, preset_values
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, target_host, verify
 
@@ -88,6 +89,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", dest="target", metavar="X.Y.Z", help="Version to install (default: latest).")
 
     p = add_command("self-uninstall", "Remove this tool.", f"{PROG} self-uninstall")
+
+    p = add_command("dirs", "List, add, or remove config directories.", f"{PROG} dirs add ~/work/claude-login")
+    p.add_argument("action", nargs="?", choices=["list", "add", "remove"], default="list")
+    p.add_argument("path", nargs="?", type=Path, help="Directory for add or remove.")
 
     p = add_command("help", "Show the help of the tool or of one command.", f"{PROG} help set")
     p.add_argument("topic", nargs="?", metavar="<command>")
@@ -198,6 +203,28 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def cmd_dirs(args) -> int:
+    """List the known config directories, or change the registry."""
+    if args.action == "list":
+        registered = set(load_registry())
+        for directory in config.discover_config_dirs():
+            origin = "registered" if directory in registered else "found"
+            print(f"{directory}  [{origin}]")
+        return 0
+    if args.path is None:
+        print(f"Give a directory: {PROG} dirs {args.action} PATH", file=sys.stderr)
+        return 2
+    if args.action == "add":
+        if not args.path.expanduser().is_dir():
+            print(f"{args.path} is not a directory.", file=sys.stderr)
+            return 2
+        changed = add_to_registry(args.path)
+    else:
+        changed = remove_from_registry(args.path)
+    print(("Done: " if changed else "No change: ") + f"{args.action} {args.path}")
+    return 0
+
+
 def cmd_vars(args) -> int:
     """List every variable in the catalog with its type and meaning."""
     for spec in CATALOG:
@@ -252,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
         "verify": cmd_verify,
         "export": cmd_export,
         "vars": cmd_vars,
+        "dirs": cmd_dirs,
         "tui": cmd_tui,
         "self-update": cmd_self_update,
         "self-uninstall": cmd_self_uninstall,
