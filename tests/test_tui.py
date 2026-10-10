@@ -75,3 +75,20 @@ async def test_verify_without_key_shows_skip_not_failure(tmp_path: Path) -> None
         await pilot.press("v")
         await pilot.pause(0.5)
         assert len(app.screen_stack) == 2
+
+
+async def test_choice_variable_opens_a_list_and_saves_the_choice(tmp_path: Path) -> None:
+    (tmp_path / "settings.json").write_text(data=json.dumps(obj={"env": {"CLAUDE_CODE_EFFORT_LEVEL": "low"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        names: list[str] = [r.name for r in app.rows]
+        table = app.query_one(selector=DataTable)
+        table.move_cursor(row=names.index("CLAUDE_CODE_EFFORT_LEVEL"))
+        await pilot.press("e")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "PickScreen"
+        await pilot.press("down", "enter")
+        await pilot.pause()
+    env: dict[str, str] = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
+    assert env["CLAUDE_CODE_EFFORT_LEVEL"] == "medium"
