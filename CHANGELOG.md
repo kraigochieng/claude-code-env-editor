@@ -1,6 +1,48 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-10-10)
+
+### Bug Fixes
+
+- **verify**: Send both auth headers when both variables are set
+  ([`ab04bc4`](https://github.com/kraigochieng/claude-code-env-editor/commit/ab04bc4c8139e3dbdd44c1478651fca524108c92))
+
+Claude Code sends Authorization and x-api-key together when ANTHROPIC_AUTH_TOKEN and
+  ANTHROPIC_API_KEY are both set. I tested this with a fake local server. Verify now does the same.
+
+Closes #28
+
+### Documentation
+
+- Explain which key variable to set and refresh screenshots
+  ([`b02e190`](https://github.com/kraigochieng/claude-code-env-editor/commit/b02e19048737daecb0abee76ff12b35f2f92b1b9))
+
+Closes #30
+
+### Features
+
+- **presets**: Record the auth variable that each preset expects
+  ([`9480cea`](https://github.com/kraigochieng/claude-code-env-editor/commit/9480cea02c83ffe7fd11d3ed9c52bee16692633d))
+
+Refs #30
+
+- **tui**: Show only the auth variable that matches the base url
+  ([`1b498d3`](https://github.com/kraigochieng/claude-code-env-editor/commit/1b498d39f41bca27813c3af6ae86927caa5ef088))
+
+The unused secret variable is hidden when it has no value. A set variable stays visible with a
+  warning in the banner. An unknown endpoint shows both variables. The show command does the same.
+
+Refs #30
+
+### Testing
+
+- Name the arguments in the login tests
+  ([`ce757c0`](https://github.com/kraigochieng/claude-code-env-editor/commit/ce757c006412eefcd6d677ed009b06bbb466c864))
+
+Refs #30
+
+
 ## v0.3.2 (2026-10-10)
 
 ### Bug Fixes
