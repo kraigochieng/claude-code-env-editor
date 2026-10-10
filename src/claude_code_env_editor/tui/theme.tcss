@@ -5,7 +5,7 @@ $muted: #8a8580;
 Screen { background: #1c1b1a; color: #e8e4de; }
 
 #banner {
-    height: 5;
+    height: 6;
     margin: 1 2 0 2;
     padding: 0 2;
     border: round $accent;

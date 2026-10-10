@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from claude_code_env_editor import __version__, config
+from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
     BY_NAME,
     CATALOG,
@@ -129,9 +130,11 @@ def cmd_show(args: argparse.Namespace) -> int:
     """Print each variable with its value and source."""
     config_dir: Path = _chosen_config_dir(args=args)
     print(f"config dir: {config_dir}")
-    for row in resolve(settings_env=config.load_env(config_dir=config_dir), environ=os.environ):
+    rows: list[Row] = visible_rows(rows=resolve(settings_env=config.load_env(config_dir=config_dir), environ=os.environ))
+    for row in rows:
         value: str = row.value if args.reveal else row.display
         print(f"{row.name:<34} {value or '-':<28} [{row.source}]")
+    print(f"auth: {describe(rows=rows)}")
     return 0
 
 
