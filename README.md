@@ -45,6 +45,34 @@ claude-code-env-editor help set
 | `?` | Help |
 | `q` | Quit |
 
+## Screenshots
+
+The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.
+
+**Home.** Each variable with its value and source. Secrets show masked.
+
+![Home page with the variable table](docs/screenshots/home.svg)
+
+**Edit.** Press `e` on a variable to change it. An empty value removes the key.
+
+![Edit dialog for one variable](docs/screenshots/edit.svg)
+
+**Presets.** Press `p` to fill the endpoint and the model names.
+
+![Preset list](docs/screenshots/preset.svg)
+
+**Verify.** Press `v` to check the URL, the key, and the model name.
+
+![Verify result with three passed checks](docs/screenshots/verify.svg)
+
+**Config directories.** Press `d` to switch between logins. The tool finds a directory by its content, so the name can be anything (`.acme-login`).
+
+![Config directory switcher](docs/screenshots/directories.svg)
+
+**Help.** Press `?` to list the keys.
+
+![Help page with the key list](docs/screenshots/help.svg)
+
 ## Variables
 
 Run `claude-code-env-editor vars` for the full list: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`,
