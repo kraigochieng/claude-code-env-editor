@@ -35,3 +35,9 @@ def test_default_path_is_in_user_config_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setattr("sys.platform", "linux")
     assert registry.default_registry_path().name == "dirs.toml"
+
+
+def test_wrong_type_gives_empty_list(tmp_path):
+    path = tmp_path / "dirs.toml"
+    path.write_text("dirs = 5")
+    assert registry.load_registry(path) == []

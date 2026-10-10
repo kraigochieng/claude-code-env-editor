@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Mapping
+from typing import Literal, Mapping
 
+from pydantic import BaseModel, ConfigDict
+
+VarKind = Literal["string", "url", "secret", "integer", "choice"]
 STRING, URL, SECRET, INTEGER, CHOICE = "string", "url", "secret", "integer", "choice"
 
 
-@dataclass(frozen=True)
-class VarSpec:
+class VarSpec(BaseModel):
     """The definition of one variable: name, type, help text, and an example value."""
+    model_config = ConfigDict(frozen=True)
+
     name: str
-    kind: str
+    kind: VarKind
     help: str
     example: str = ""
     choices: tuple[str, ...] = ()
@@ -25,23 +28,19 @@ class VarSpec:
 
 
 CATALOG: tuple[VarSpec, ...] = (
-    VarSpec("ANTHROPIC_BASE_URL", URL, "Endpoint that Claude Code calls.", "https://api.deepseek.com/anthropic"),
-    VarSpec("ANTHROPIC_AUTH_TOKEN", SECRET, "Bearer token for the endpoint.", "sk-..."),
-    VarSpec("ANTHROPIC_API_KEY", SECRET, "API key sent in the x-api-key header.", "sk-ant-..."),
-    VarSpec("ANTHROPIC_MODEL", STRING, "Main model name.", "deepseek-flash[1m]"),
-    VarSpec("ANTHROPIC_DEFAULT_OPUS_MODEL", STRING, "Model that the opus alias uses.", "deepseek-flash[1m]"),
-    VarSpec("ANTHROPIC_DEFAULT_SONNET_MODEL", STRING, "Model that the sonnet alias uses.", "deepseek-flash[1m]"),
-    VarSpec("ANTHROPIC_DEFAULT_HAIKU_MODEL", STRING, "Model that the haiku alias uses.", "deepseek-flash"),
-    VarSpec("CLAUDE_CODE_SUBAGENT_MODEL", STRING, "Model that subagents use.", "deepseek-flash"),
-    VarSpec("CLAUDE_CODE_EFFORT_LEVEL", STRING, "Effort level for the model.", "max"),
-    VarSpec("CLAUDE_CODE_AUTO_COMPACT_WINDOW", INTEGER, "Context size at which Claude Code compacts.", "786432"),
-    VarSpec("ANTHROPIC_SMALL_FAST_MODEL", STRING, "Older name for the fast model. Kept for compatibility.", "deepseek-flash"),
-    VarSpec("API_TIMEOUT_MS", INTEGER, "Request timeout in milliseconds.", "600000"),
-    VarSpec(
-        "CLAUDE_CONFIG_DIR",
-        STRING,
-        "Config directory of one Claude Code login. Not written to settings.json.",
-        "~/.claude-work",
+    VarSpec(name="ANTHROPIC_BASE_URL", kind=URL, help="Endpoint that Claude Code calls.", example="https://api.deepseek.com/anthropic"),
+    VarSpec(name="ANTHROPIC_AUTH_TOKEN", kind=SECRET, help="Bearer token for the endpoint.", example="sk-..."),
+    VarSpec(name="ANTHROPIC_API_KEY", kind=SECRET, help="API key sent in the x-api-key header.", example="sk-ant-..."),
+    VarSpec(name="ANTHROPIC_MODEL", kind=STRING, help="Main model name.", example="deepseek-flash[1m]"),
+    VarSpec(name="ANTHROPIC_DEFAULT_OPUS_MODEL", kind=STRING, help="Model that the opus alias uses.", example="deepseek-flash[1m]"),
+    VarSpec(name="ANTHROPIC_DEFAULT_SONNET_MODEL", kind=STRING, help="Model that the sonnet alias uses.", example="deepseek-flash[1m]"),
+    VarSpec(name="ANTHROPIC_DEFAULT_HAIKU_MODEL", kind=STRING, help="Model that the haiku alias uses.", example="deepseek-flash"),
+    VarSpec(name="CLAUDE_CODE_SUBAGENT_MODEL", kind=STRING, help="Model that subagents use.", example="deepseek-flash"),
+    VarSpec(name="CLAUDE_CODE_EFFORT_LEVEL", kind=STRING, help="Effort level for the model.", example="max"),
+    VarSpec(name="CLAUDE_CODE_AUTO_COMPACT_WINDOW", kind=INTEGER, help="Context size at which Claude Code compacts.", example="786432"),
+    VarSpec(name="ANTHROPIC_SMALL_FAST_MODEL", kind=STRING, help="Older name for the fast model. Kept for compatibility.", example="deepseek-flash"),
+    VarSpec(name="API_TIMEOUT_MS", kind=INTEGER, help="Request timeout in milliseconds.", example="600000"),
+    VarSpec(name="CLAUDE_CONFIG_DIR", kind=STRING, help="Config directory of one Claude Code login. Not written to settings.json.", example="~/.claude-work",
         writable=False,
     ),
 )
@@ -72,13 +71,14 @@ def validate(spec: VarSpec, value: str) -> str | None:
     return None
 
 
-@dataclass(frozen=True)
-class Row:
+class Row(BaseModel):
     """One line of the variable table: the name, the value, and where the value comes from."""
+    model_config = ConfigDict(frozen=True)
+
     name: str
     value: str
-    source: str
-    spec: VarSpec | None  # None for a custom variable
+    source: Literal["env", "settings", "unset"]
+    spec: VarSpec | None = None  # None for a custom variable
 
     @property
     def secret(self) -> bool:
@@ -100,12 +100,12 @@ def resolve(settings_env: Mapping[str, str], environ: Mapping[str, str]) -> list
     rows: list[Row] = []
     for spec in CATALOG:
         if spec.name in environ:
-            rows.append(Row(spec.name, environ[spec.name], SOURCE_ENV, spec))
+            rows.append(Row(name=spec.name, value=environ[spec.name], source=SOURCE_ENV, spec=spec))
         elif spec.name in settings_env:
-            rows.append(Row(spec.name, str(settings_env[spec.name]), SOURCE_SETTINGS, spec))
+            rows.append(Row(name=spec.name, value=str(settings_env[spec.name]), source=SOURCE_SETTINGS, spec=spec))
         else:
-            rows.append(Row(spec.name, "", SOURCE_UNSET, spec))
+            rows.append(Row(name=spec.name, value="", source=SOURCE_UNSET, spec=spec))
     for name, value in settings_env.items():
         if name not in BY_NAME and name.startswith(CUSTOM_PREFIXES):
-            rows.append(Row(name, str(value), SOURCE_SETTINGS, None))
+            rows.append(Row(name=name, value=str(value), source=SOURCE_SETTINGS, spec=None))
     return rows

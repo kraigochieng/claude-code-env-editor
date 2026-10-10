@@ -12,7 +12,7 @@ from claude_code_env_editor import __version__, config
 from claude_code_env_editor.envvars import BY_NAME, CATALOG, SOURCE_UNSET, mask, resolve, validate
 from claude_code_env_editor.registry import add_to_registry, load_registry, remove_from_registry
 from claude_code_env_editor.presets import load_presets, preset_values
-from claude_code_env_editor.verify import FAIL, PASS, SKIP, target_host, verify
+from claude_code_env_editor.verify import FAIL, PASS, SKIP, Endpoint, verify
 
 PROG = "claude-code-env-editor"
 EPILOG = f"Run '{PROG} help <command>' for the help of one command."
@@ -163,8 +163,8 @@ def cmd_preset(args) -> int:
     """List the presets, or apply one to settings.json."""
     presets = load_presets()
     if not args.name:
-        for pid, body in presets.items():
-            print(f"{pid:<12} {body['label']:<24} {body['ANTHROPIC_BASE_URL']}")
+        for pid, preset in presets.items():
+            print(f"{pid:<12} {preset.label:<24} {preset.base_url}")
         return 0
     try:
         values = preset_values(args.name)
@@ -180,9 +180,9 @@ def cmd_preset(args) -> int:
 
 def cmd_verify(args) -> int:
     """Run the verify checks and return 1 if any check failed."""
-    values = _values_in_effect(_chosen_config_dir(args))
-    print(f"Sending requests to {target_host(values)} only.")
-    checks = verify(values)
+    endpoint = Endpoint.from_values(_values_in_effect(_chosen_config_dir(args)))
+    print(f"Sending requests to {endpoint.host} only.")
+    checks = verify(endpoint)
     for c in checks:
         print(f"[{MARKS[c.status]}] {c.name:<12} {c.detail}")
     return 1 if any(c.status == FAIL for c in checks) else 0

@@ -4,16 +4,36 @@ from __future__ import annotations
 
 from importlib import resources
 
+from pydantic import BaseModel, ConfigDict
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.10
     import tomli as tomllib
 
 
-def load_presets() -> dict[str, dict[str, str]]:
-    """Return {preset id: {variable: value}}. The label is under the key 'label'."""
+class Preset(BaseModel):
+    """A sample endpoint: a label and the variables it sets."""
+
+    model_config = ConfigDict(frozen=True)
+
+    label: str
+    variables: dict[str, str]
+
+    @property
+    def base_url(self) -> str:
+        """Return the endpoint URL of this preset."""
+        return self.variables["ANTHROPIC_BASE_URL"]
+
+
+def load_presets() -> dict[str, Preset]:
+    """Return {preset id: Preset} from presets.toml."""
     text = resources.files("claude_code_env_editor").joinpath("presets.toml").read_text(encoding="utf-8")
-    return tomllib.loads(text)
+    raw = tomllib.loads(text)
+    return {
+        preset_id: Preset(label=body["label"], variables={k: v for k, v in body.items() if k != "label"})
+        for preset_id, body in raw.items()
+    }
 
 
 def preset_values(preset_id: str) -> dict[str, str]:
@@ -21,4 +41,4 @@ def preset_values(preset_id: str) -> dict[str, str]:
     presets = load_presets()
     if preset_id not in presets:
         raise KeyError(f"Unknown preset '{preset_id}'. Choose one of: {', '.join(presets)}.")
-    return {k: v for k, v in presets[preset_id].items() if k != "label"}
+    return dict(presets[preset_id].variables)
