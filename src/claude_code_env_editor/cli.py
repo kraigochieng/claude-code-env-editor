@@ -8,11 +8,11 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, config
-from .envvars import BY_NAME, CATALOG, SOURCE_UNSET, mask, resolve, validate
-from .presets import load_presets, preset_values
-from .secrets import SecretsError, SecretStore
-from .verify import FAIL, PASS, SKIP, target_host, verify
+from claude_code_env_editor import __version__, config
+from claude_code_env_editor.envvars import BY_NAME, CATALOG, SOURCE_UNSET, mask, resolve, validate
+from claude_code_env_editor.presets import load_presets, preset_values
+from claude_code_env_editor.secrets import SecretsError, SecretStore
+from claude_code_env_editor.verify import FAIL, PASS, SKIP, target_host, verify
 
 PROG = "claude-code-env-editor"
 EPILOG = f"Run '{PROG} help <command>' for the help of one command."
@@ -225,7 +225,7 @@ def cmd_self_uninstall(args) -> int:
 
 
 def cmd_tui(args) -> int:
-    from .tui.app import run
+    from claude_code_env_editor.tui.app import run
 
     return run(_dir(args))
 
