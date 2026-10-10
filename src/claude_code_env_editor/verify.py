@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 import time
 from typing import ClassVar, Final, Literal, Mapping
@@ -93,6 +94,20 @@ def strip_model_suffix(model: str) -> str:
     return _SUFFIX.sub(repl="", string=model)
 
 
+_REQUEST_ID: re.Pattern[str] = re.compile(r"\s*\(request_id: [^)]*\)")
+_MAX_MESSAGE: Final[int] = 300
+
+
+class ModelList(BaseModel):
+    """The result of the models check and the model ids the endpoint listed, if any."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+
+    check: Check
+    ids: list[str] = []
+    listed_without_key: bool = False
+
+
 def verify(
     endpoint: Endpoint,
     client: httpx.Client | None = None,
@@ -132,44 +147,133 @@ def verify(
     own_client: bool = client is None
     http_client: httpx.Client = client or httpx.Client(timeout=timeout, follow_redirects=False)
     try:
-        checks.append(_check_models(client=http_client, endpoint=endpoint))
-        if checks[-1].status == FAIL:
+        models: ModelList = _check_models(client=http_client, endpoint=endpoint, timeout=timeout)
+        checks.append(models.check)
+        if models.check.status == FAIL:
             return checks
         if not endpoint.model:
-            checks.append(Check(name="model", status=SKIP, detail="Set ANTHROPIC_MODEL to test the model name."))
+            checks.append(
+                Check(
+                    name="model",
+                    status=SKIP,
+                    detail="Set ANTHROPIC_MODEL to test the model name. "
+                    "The key is not proven until a model request succeeds.",
+                )
+            )
         else:
-            checks.append(_check_message(client=http_client, endpoint=endpoint))
+            checks.append(_check_message(client=http_client, endpoint=endpoint, models=models, timeout=timeout))
     finally:
         if own_client:
             http_client.close()
     return checks
 
 
-def _check_models(client: httpx.Client, endpoint: Endpoint) -> Check:
-    """Check the key with GET /v1/models."""
+def provider_message(resp: httpx.Response, endpoint: Endpoint) -> str:
+    """Return the error message from a JSON error body, or the start of the text. Secrets are removed."""
+    message: str = ""
+    try:
+        data: object = resp.json()
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        error: object = data.get("error")
+        if isinstance(error, dict):
+            message = str(error.get("message", ""))
+        elif isinstance(error, str):
+            message = error
+        else:
+            message = str(data.get("message") or data.get("detail") or "")
+    if not message:
+        message = resp.text
+    message = _REQUEST_ID.sub(repl="", string=" ".join(message.split()))
+    return endpoint.redact(text=message[:_MAX_MESSAGE])
+
+
+def describe_exception(exc: httpx.HTTPError, endpoint: Endpoint, timeout: float) -> str:
+    """Return a plain explanation of a network error."""
+    if isinstance(exc, httpx.TimeoutException):
+        return f"No answer from {endpoint.host} within {timeout:.0f} seconds. The endpoint may be slow or down."
+    if isinstance(exc, httpx.ConnectError):
+        return f"Cannot connect to {endpoint.host}. Check the base URL and your network."
+    return endpoint.redact(text=f"{type(exc).__name__}: {exc}")
+
+
+def suggest_models(model: str, ids: list[str]) -> str:
+    """Return ' Did you mean: a, b?' for the listed ids closest to model, or an empty text."""
+    close: list[str] = difflib.get_close_matches(word=model, possibilities=ids, n=3, cutoff=0.6)
+    return f" Did you mean: {', '.join(close)}?" if close else ""
+
+
+def _model_ids(resp: httpx.Response) -> list[str]:
+    """Read the model ids from a /v1/models answer. Return an empty list when the shape is unknown."""
+    try:
+        data: object = resp.json()
+    except ValueError:
+        return []
+    items: object = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [str(item["id"]) for item in items if isinstance(item, dict) and "id" in item]
+
+
+def _check_models(client: httpx.Client, endpoint: Endpoint, timeout: float) -> ModelList:
+    """Reach GET /v1/models. This proves the key only on endpoints that protect the list."""
     start: float = time.perf_counter()
     try:
         resp: httpx.Response = client.get(url=f"{endpoint.base_url}/v1/models", headers=endpoint.headers)
     except httpx.HTTPError as exc:
-        return Check(name="key", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
+        return ModelList(check=Check(name="key", status=FAIL, detail=describe_exception(exc=exc, endpoint=endpoint, timeout=timeout)))
     ms: int = int((time.perf_counter() - start) * 1000)
-    if resp.status_code in (401, 403):
-        return Check(name="key", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
-    if resp.status_code in (404, 405):
-        return Check(name="key", status=SKIP, detail=f"HTTP {resp.status_code}: the endpoint has no /v1/models route.")
-    if 300 <= resp.status_code < 400:
-        return Check(
-            name="key",
-            status=FAIL,
-            detail=f"HTTP {resp.status_code}: the endpoint redirects. The tool does not follow redirects.",
+    code: int = resp.status_code
+    if code in (401, 403):
+        return ModelList(
+            check=Check(
+                name="key",
+                status=FAIL,
+                detail=f"HTTP {code}: the endpoint rejects the key. {provider_message(resp=resp, endpoint=endpoint)}".strip(),
+            )
         )
-    if resp.status_code >= 400:
-        return Check(name="key", status=FAIL, detail=f"HTTP {resp.status_code}")
-    return Check(name="key", status=PASS, detail=f"HTTP {resp.status_code} in {ms} ms")
+    if code in (404, 405):
+        return ModelList(
+            check=Check(name="key", status=SKIP, detail=f"HTTP {code}: the endpoint has no /v1/models route.")
+        )
+    if 300 <= code < 400:
+        return ModelList(
+            check=Check(
+                name="key",
+                status=FAIL,
+                detail=f"HTTP {code}: the endpoint redirects. The tool does not follow redirects.",
+            )
+        )
+    if code >= 400:
+        return ModelList(check=Check(name="key", status=FAIL, detail=_explain_status(code=code, resp=resp, endpoint=endpoint)))
+    ids: list[str] = _model_ids(resp=resp)
+    count: str = f", {len(ids)} models listed" if ids else ""
+    return ModelList(
+        check=Check(name="key", status=PASS, detail=f"HTTP {code} in {ms} ms{count}"),
+        ids=ids,
+        listed_without_key=True,
+    )
 
 
-def _check_message(client: httpx.Client, endpoint: Endpoint) -> Check:
-    """Check the model name with a one-token POST /v1/messages."""
+def _explain_status(code: int, resp: httpx.Response, endpoint: Endpoint) -> str:
+    """Explain an HTTP error status in plain words and add the provider message."""
+    reason: str
+    if code in (401, 403):
+        reason = "the endpoint rejects the key"
+    elif code == 402:
+        reason = "the account has no credit or needs a payment"
+    elif code == 429:
+        reason = "the rate limit or the quota is reached. Wait and try again, or check your plan"
+    elif code >= 500:
+        reason = "the endpoint has a problem. Try again later"
+    else:
+        reason = "the endpoint refuses the request"
+    return f"HTTP {code}: {reason}. {provider_message(resp=resp, endpoint=endpoint)}".strip()
+
+
+def _check_message(client: httpx.Client, endpoint: Endpoint, models: ModelList, timeout: float) -> Check:
+    """Check the key and the model name with a one-token POST /v1/messages."""
     requested_model: str = strip_model_suffix(model=endpoint.model)
     body: dict[str, object] = {
         "model": requested_model,
@@ -180,14 +284,26 @@ def _check_message(client: httpx.Client, endpoint: Endpoint) -> Check:
     try:
         resp: httpx.Response = client.post(url=f"{endpoint.base_url}/v1/messages", headers=endpoint.headers, json=body)
     except httpx.HTTPError as exc:
-        return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"{type(exc).__name__}: {exc}"))
+        return Check(name="model", status=FAIL, detail=describe_exception(exc=exc, endpoint=endpoint, timeout=timeout))
     ms: int = int((time.perf_counter() - start) * 1000)
-    if resp.status_code in (401, 403):
-        return Check(name="model", status=FAIL, detail=f"HTTP {resp.status_code}: the endpoint rejects the key.")
-    if resp.status_code >= 400:
-        return Check(name="model", status=FAIL, detail=endpoint.redact(text=f"HTTP {resp.status_code}: {resp.text[:200]}"))
+    code: int = resp.status_code
+    if code in (401, 403):
+        note: str = " This endpoint lists models without a key, so only this request proves the key." if models.listed_without_key else ""
+        return Check(name="model", status=FAIL, detail=f"{_explain_status(code=code, resp=resp, endpoint=endpoint)}{note}")
+    if code in (400, 404, 422):
+        hint: str = suggest_models(model=requested_model, ids=models.ids)
+        sent: str = f" (sent as '{requested_model}')" if requested_model != endpoint.model else ""
+        return Check(
+            name="model",
+            status=FAIL,
+            detail=f"HTTP {code}: the endpoint does not accept the model '{endpoint.model}'{sent}. "
+            f"{provider_message(resp=resp, endpoint=endpoint)}{hint}".strip(),
+        )
+    if code >= 400:
+        return Check(name="model", status=FAIL, detail=_explain_status(code=code, resp=resp, endpoint=endpoint))
     try:
         name: str = str(resp.json().get("model", requested_model))
     except ValueError:
         name = requested_model
-    return Check(name="model", status=PASS, detail=f"{name} answered in {ms} ms")
+    sent_note: str = f" (sent as '{requested_model}')" if requested_model != endpoint.model else ""
+    return Check(name="model", status=PASS, detail=f"{name} answered in {ms} ms{sent_note}")
