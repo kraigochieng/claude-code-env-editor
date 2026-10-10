@@ -97,6 +97,16 @@ async def test_choice_variable_opens_a_list_and_saves_the_choice(tmp_path: Path)
     assert env["CLAUDE_CODE_EFFORT_LEVEL"] == "medium"
 
 
+async def test_command_palette_and_theme_picker_are_disabled(tmp_path: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1
+        assert "command_palette" not in {binding.action for _, binding in app._bindings}
+
+
 async def test_home_and_edit_dialog_tell_how_to_paste(tmp_path: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
