@@ -8,7 +8,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.auth import describe, visible_rows
@@ -247,8 +247,12 @@ def cmd_dirs(args: argparse.Namespace) -> int:
 def cmd_vars(args: argparse.Namespace) -> int:
     """List every variable in the catalog with its type and meaning."""
     for spec in CATALOG:
-        flag: Literal['secret'] | Literal['string'] | Literal['url'] | Literal['integer'] | Literal['choice'] = "secret" if spec.secret else spec.kind
+        flag: str = "secret" if spec.secret else spec.kind
         print(f"{spec.name:<34} {flag:<8} {spec.help}")
+        if spec.choices:
+            print(f"{'':<43}Values: {', '.join(spec.choices)}")
+        if spec.minimum is not None and spec.maximum is not None:
+            print(f"{'':<43}Range: {spec.minimum} to {spec.maximum}")
     return 0
 
 

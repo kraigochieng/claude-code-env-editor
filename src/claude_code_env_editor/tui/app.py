@@ -18,6 +18,7 @@ from textual.widgets.option_list import Option
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
+    CHOICE,
     SOURCE_UNSET,
     Row,
     VarSpec,
@@ -27,7 +28,9 @@ from claude_code_env_editor.envvars import (
 from claude_code_env_editor.presets import Preset, load_presets, preset_values
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
-HELP_KEYS: Final[tuple[tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str]]] = (
+REMOVE_CHOICE: Final[str] = "__remove__"
+
+HELP_KEYS: Final[tuple[tuple[str, str], ...]] = (
     ("e / enter", "Edit the selected variable"),
     ("v", "Verify the endpoint, the key, and the model"),
     ("r", "Reveal or hide secret values"),
@@ -242,6 +245,20 @@ class EnvEditorApp(App[None]):
             self.refresh_rows(keep=row.name)
             self.set_status(message=f"Saved {row.name}." if value else f"Removed {row.name}.")
 
+        if row.spec and row.spec.kind == CHOICE:
+            options: list[tuple[str, str]] = [(choice, choice) for choice in row.spec.choices]
+            options.append((REMOVE_CHOICE, "(remove from settings.json)"))
+
+            def save_chosen_value(choice: str | None) -> None:
+                """Save the chosen value. The remove entry removes the key."""
+                if choice is not None:
+                    save_edited_value(value="" if choice == REMOVE_CHOICE else choice)
+
+            self.push_screen(
+                screen=PickScreen(title=f"{row.name} (now: {row.value or 'unset'})", options=options),
+                callback=save_chosen_value,
+            )
+            return
         self.push_screen(screen=EditScreen(row=row), callback=save_edited_value)
 
     def action_remove(self) -> None:
