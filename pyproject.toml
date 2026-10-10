@@ -54,6 +54,5 @@ prerelease = false
 
 [tool.mypy]
 strict = true
-python_version = "3.10"
 files = ["src", "tests"]
 plugins = ["pydantic.mypy"]
