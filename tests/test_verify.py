@@ -9,6 +9,7 @@ from claude_code_env_editor.verify import (
     SKIP,
     Check,
     Endpoint,
+    provider_message,
     strip_model_suffix,
     verify,
 )
@@ -130,29 +131,103 @@ def no_key_handler(request: httpx.Request) -> httpx.Response:
 
 
 def test_no_key_on_anthropic_api_is_skipped_not_failed() -> None:
-    checks: list[Check] = verify(Endpoint.from_values({}), client=client(ok_handler), login_found=True)
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values={}), client=client(ok_handler), login_found=True)
     assert [c.status for c in checks] == [PASS, SKIP]
     assert "A login was found." in checks[-1].detail
 
 
 def test_no_key_and_no_login_on_anthropic_api_is_skipped_with_note() -> None:
-    checks: list[Check] = verify(Endpoint.from_values({}), client=client(ok_handler), login_found=False)
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values={}), client=client(ok_handler), login_found=False)
     assert checks[-1].status == SKIP and "No login was found" in checks[-1].detail
 
 
 def test_no_key_on_remote_custom_endpoint_fails() -> None:
     values: dict[str, str] = {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"}
-    checks: list[Check] = verify(Endpoint.from_values(values), client=client(ok_handler), login_found=True)
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values=values), client=client(ok_handler), login_found=True)
     assert checks[-1].name == "credentials" and checks[-1].status == FAIL
 
 
 def test_no_key_on_local_endpoint_sends_request_without_key() -> None:
     values: dict[str, str] = {"ANTHROPIC_BASE_URL": "http://localhost:11434", "ANTHROPIC_MODEL": "llama"}
-    checks: list[Check] = verify(Endpoint.from_values(values), client=client(no_key_handler))
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values=values), client=client(no_key_handler))
     assert [c.status for c in checks] == [PASS, PASS, PASS]
 
 
 def test_endpoint_kind_properties() -> None:
-    assert Endpoint.from_values({}).is_anthropic
-    assert Endpoint.from_values({"ANTHROPIC_BASE_URL": "http://127.0.0.1:4000"}).is_local
-    assert not Endpoint.from_values({"ANTHROPIC_BASE_URL": "https://openrouter.ai/api"}).is_local
+    assert Endpoint.from_values(values={}).is_anthropic
+    assert Endpoint.from_values(values={"ANTHROPIC_BASE_URL": "http://127.0.0.1:4000"}).is_local
+    assert not Endpoint.from_values(values={"ANTHROPIC_BASE_URL": "https://openrouter.ai/api"}).is_local
+
+
+def models_and_message(models_status: int, message_status: int, message_body: dict[str, object]) -> httpx.Client:
+    """Build a client: /v1/models answers with a model list, /v1/messages answers with the given error."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v1/models"):
+            ids: list[dict[str, str]] = [{"id": "deepseek-flash"}, {"id": "deepseek-v4-pro"}]
+            return httpx.Response(models_status, json={"data": ids})
+        return httpx.Response(message_status, json=message_body)
+
+    return client(handler)
+
+
+def test_mistyped_model_shows_the_provider_message_and_a_suggestion() -> None:
+    values: dict[str, str] = {**VALUES, "ANTHROPIC_MODEL": "deepseek-flsh"}
+    body: dict[str, object] = {"error": {"message": "unknown model deepseek-flsh (request_id: abc-123)"}}
+    checks: list[Check] = verify(
+        endpoint=Endpoint.from_values(values=values), client=models_and_message(200, 400, body)
+    )
+    detail: str = checks[-1].detail
+    assert checks[-1].status == FAIL
+    assert "unknown model deepseek-flsh" in detail and "request_id" not in detail
+    assert "Did you mean: deepseek-flash" in detail
+    assert "{" not in detail
+
+
+def test_suffix_is_named_in_the_error() -> None:
+    values: dict[str, str] = {**VALUES, "ANTHROPIC_MODEL": "deepseek-flsh[1m]"}
+    checks: list[Check] = verify(
+        endpoint=Endpoint.from_values(values=values), client=models_and_message(200, 400, {"error": {"message": "bad"}})
+    )
+    assert "sent as 'deepseek-flsh'" in checks[-1].detail
+
+
+def test_rejected_key_after_a_public_model_list_is_explained() -> None:
+    checks: list[Check] = verify(
+        endpoint=Endpoint.from_values(values=VALUES), client=models_and_message(200, 401, {"error": {"message": "bad key"}})
+    )
+    assert checks[0].status == PASS and checks[1].status == PASS
+    assert checks[-1].status == FAIL and "lists models without a key" in checks[-1].detail
+
+
+def test_payment_and_rate_limit_and_server_errors_have_plain_reasons() -> None:
+    for code, words in ((402, "no credit"), (429, "rate limit"), (503, "Try again later")):
+        checks: list[Check] = verify(
+            endpoint=Endpoint.from_values(values=VALUES), client=models_and_message(200, code, {"error": {"message": "x"}})
+        )
+        assert words in checks[-1].detail, code
+
+
+def test_timeout_and_connection_errors_have_plain_reasons() -> None:
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow")
+
+    def connect_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("down")
+
+    slow: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(timeout_handler))
+    down: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(connect_handler))
+    assert "No answer from example.test" in slow[-1].detail
+    assert "Cannot connect to example.test" in down[-1].detail
+
+
+def test_provider_message_reads_string_error_and_plain_text() -> None:
+    endpoint: Endpoint = Endpoint.from_values(values=VALUES)
+    assert provider_message(resp=httpx.Response(400, json={"error": "plain"}), endpoint=endpoint) == "plain"
+    assert provider_message(resp=httpx.Response(500, text="  gateway   down "), endpoint=endpoint) == "gateway down"
+
+
+def test_no_model_says_the_key_is_not_proven() -> None:
+    values: dict[str, str] = {k: v for k, v in VALUES.items() if k != "ANTHROPIC_MODEL"}
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values=values), client=models_and_message(200, 200, {}))
+    assert checks[-1].status == SKIP and "not proven" in checks[-1].detail
