@@ -66,3 +66,12 @@ async def test_help_screen_opens_and_closes(tmp_path: Path) -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert len(app.screen_stack) == 1
+
+
+async def test_verify_without_key_shows_skip_not_failure(tmp_path: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause(0.5)
+        assert len(app.screen_stack) == 2

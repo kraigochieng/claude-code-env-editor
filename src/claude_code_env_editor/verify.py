@@ -56,6 +56,16 @@ class Endpoint(BaseModel):
         return urlparse(url=self.base_url).netloc
 
     @property
+    def is_anthropic(self) -> bool:
+        """Return True when the endpoint is the Anthropic API, where a Claude login works."""
+        return self.host == urlparse(url=DEFAULT_BASE_URL).netloc
+
+    @property
+    def is_local(self) -> bool:
+        """Return True when the endpoint runs on this machine."""
+        return urlparse(url=self.base_url).hostname in LOCAL_HOSTS
+
+    @property
     def has_credentials(self) -> bool:
         """Return True when a token or a key is set."""
         return bool(self.auth_token or self.api_key)
@@ -87,10 +97,13 @@ def verify(
     endpoint: Endpoint,
     client: httpx.Client | None = None,
     timeout: float = 20.0,
+    login_found: bool = False,
 ) -> list[Check]:
     """Run the checks in order. Stop after a failure that makes later checks useless.
 
     The request goes only to the endpoint URL. The client never follows a redirect.
+    Without a key, the result depends on the endpoint: the Anthropic API uses the Claude login
+    (skip), a local endpoint gets an unauthenticated request, and any other endpoint fails.
     """
     parsed: ParseResult = urlparse(url=endpoint.base_url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -100,8 +113,20 @@ def verify(
         detail += " (warning: http sends the key without encryption)"
     checks: list[Check] = [Check(name="url", status=PASS, detail=detail)]
 
-    if not endpoint.has_credentials:
-        checks.append(Check(name="credentials", status=FAIL, detail="Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY."))
+    if not endpoint.has_credentials and not endpoint.is_local:
+        if endpoint.is_anthropic:
+            login: str = "A login was found." if login_found else "No login was found in this config directory."
+            detail_text: str = f"No key set. Claude Code uses your Claude login. {login} This tool cannot test the login."
+            checks.append(Check(name="credentials", status=SKIP, detail=detail_text))
+            return checks
+        checks.append(
+            Check(
+                name="credentials",
+                status=FAIL,
+                detail="This endpoint needs a key. A Claude login works only with the Anthropic API. "
+                "Set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY.",
+            )
+        )
         return checks
 
     own_client: bool = client is None

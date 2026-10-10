@@ -195,9 +195,10 @@ def cmd_preset(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run the verify checks and return 1 if any check failed."""
-    endpoint: Endpoint = Endpoint.from_values(values=_values_in_effect(config_dir=_chosen_config_dir(args=args)))
+    config_dir: Path = _chosen_config_dir(args=args)
+    endpoint: Endpoint = Endpoint.from_values(values=_values_in_effect(config_dir=config_dir))
     print(f"Sending requests to {endpoint.host} only.")
-    checks: list[Check] = verify(endpoint=endpoint)
+    checks: list[Check] = verify(endpoint=endpoint, login_found=config.has_login(config_dir=config_dir))
     for c in checks:
         print(f"[{MARKS[c.status]}] {c.name:<12} {c.detail}")
     return 1 if any(c.status == FAIL for c in checks) else 0

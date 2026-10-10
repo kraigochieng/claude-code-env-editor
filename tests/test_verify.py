@@ -115,3 +115,39 @@ def test_endpoint_defaults_and_host() -> None:
 
 def test_endpoint_model_falls_back_to_sonnet_alias() -> None:
     assert Endpoint.from_values(values={"ANTHROPIC_DEFAULT_SONNET_MODEL": "s"}).model == "s"
+
+
+def no_key_handler(request: httpx.Request) -> httpx.Response:
+    """Answer 200 only when the request carries no key."""
+    if "authorization" in request.headers or "x-api-key" in request.headers:
+        return httpx.Response(400)
+    return httpx.Response(200, json={"model": "m", "data": []})
+
+
+def test_no_key_on_anthropic_api_is_skipped_not_failed() -> None:
+    checks: list[Check] = verify(Endpoint.from_values({}), client=client(ok_handler), login_found=True)
+    assert [c.status for c in checks] == [PASS, SKIP]
+    assert "A login was found." in checks[-1].detail
+
+
+def test_no_key_and_no_login_on_anthropic_api_is_skipped_with_note() -> None:
+    checks: list[Check] = verify(Endpoint.from_values({}), client=client(ok_handler), login_found=False)
+    assert checks[-1].status == SKIP and "No login was found" in checks[-1].detail
+
+
+def test_no_key_on_remote_custom_endpoint_fails() -> None:
+    values: dict[str, str] = {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"}
+    checks: list[Check] = verify(Endpoint.from_values(values), client=client(ok_handler), login_found=True)
+    assert checks[-1].name == "credentials" and checks[-1].status == FAIL
+
+
+def test_no_key_on_local_endpoint_sends_request_without_key() -> None:
+    values: dict[str, str] = {"ANTHROPIC_BASE_URL": "http://localhost:11434", "ANTHROPIC_MODEL": "llama"}
+    checks: list[Check] = verify(Endpoint.from_values(values), client=client(no_key_handler))
+    assert [c.status for c in checks] == [PASS, PASS, PASS]
+
+
+def test_endpoint_kind_properties() -> None:
+    assert Endpoint.from_values({}).is_anthropic
+    assert Endpoint.from_values({"ANTHROPIC_BASE_URL": "http://127.0.0.1:4000"}).is_local
+    assert not Endpoint.from_values({"ANTHROPIC_BASE_URL": "https://openrouter.ai/api"}).is_local
