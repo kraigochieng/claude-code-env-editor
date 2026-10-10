@@ -17,7 +17,7 @@ def test_help_exits_zero(capsys):
     assert "usage" in capsys.readouterr().out.lower()
 
 
-@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "preset", "verify", "export", "vars", "help"])
+@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "preset", "verify", "export", "vars", "help", "self-update", "self-uninstall"])
 def test_every_command_has_help(command, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([command, "--help"])

@@ -82,6 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("vars", "List all variables the tool handles.", f"{PROG} vars")
 
+    p = add("self-update", "Install the latest version, or the version you choose.", f"{PROG} self-update --version 0.2.0")
+    p.add_argument("--version", dest="target", metavar="X.Y.Z", help="Version to install (default: latest).")
+
+    p = add("self-uninstall", "Remove this tool.", f"{PROG} self-uninstall")
+
     p = add("help", "Show the help of the tool or of one command.", f"{PROG} help set")
     p.add_argument("topic", nargs="?", metavar="<command>")
     return parser
@@ -199,6 +204,26 @@ def cmd_vars(args) -> int:
     return 0
 
 
+INSTALL_URL = "https://raw.githubusercontent.com/kraigochieng/claude-code-env-editor/main/install.sh"
+
+
+def cmd_self_update(args) -> int:
+    import subprocess
+
+    script = subprocess.run(["curl", "-LsSf", INSTALL_URL], capture_output=True, text=True)
+    if script.returncode != 0:
+        print("Error: cannot download install.sh.", file=sys.stderr)
+        return 1
+    cmd = ["sh", "-s", "--"] + (["--version", args.target] if args.target else [])
+    return subprocess.run(cmd, input=script.stdout, text=True).returncode
+
+
+def cmd_self_uninstall(args) -> int:
+    import subprocess
+
+    return subprocess.run(["uv", "tool", "uninstall", "claude-code-env-editor"]).returncode
+
+
 def cmd_tui(args) -> int:
     from .tui.app import run
 
@@ -222,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
         "export": cmd_export,
         "vars": cmd_vars,
         "tui": cmd_tui,
+        "self-update": cmd_self_update,
+        "self-uninstall": cmd_self_uninstall,
     }[args.command]
     try:
         return handler(args)
