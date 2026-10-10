@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Static
 
 from claude_code_env_editor.tui.app import EnvEditorApp, TextScreen
 from claude_code_env_editor.verify import Check, Endpoint
@@ -95,6 +95,18 @@ async def test_choice_variable_opens_a_list_and_saves_the_choice(tmp_path: Path)
         await pilot.pause()
     env: dict[str, str] = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
     assert env["CLAUDE_CODE_EFFORT_LEVEL"] == "medium"
+
+
+async def test_home_and_edit_dialog_tell_how_to_paste(tmp_path: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        status: str = str(app.query_one(selector="#status", expect_type=Static).render())
+        assert "Ctrl+Shift+V" in status
+        await pilot.press("e")
+        await pilot.pause()
+        hint: str = str(app.screen.query_one(selector="#paste-hint", expect_type=Static).render())
+        assert "Ctrl+Shift+V" in hint
 
 
 async def test_closing_the_verify_dialog_before_the_answer_does_not_crash(

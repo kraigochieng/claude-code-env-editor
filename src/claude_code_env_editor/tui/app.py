@@ -30,9 +30,11 @@ from claude_code_env_editor.presets import Preset, load_presets, preset_values
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 REMOVE_CHOICE: Final[str] = "__remove__"
+PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a terminal)."
 
 HELP_KEYS: Final[tuple[tuple[str, str], ...]] = (
     ("e / enter", "Edit the selected variable"),
+    ("ctrl+shift+v", "Paste in a value box. A terminal does not use Ctrl+V"),
     ("v", "Verify the endpoint, the key, and the model"),
     ("r", "Reveal or hide secret values"),
     ("p", "Apply a preset endpoint"),
@@ -65,6 +67,7 @@ class EditScreen(ModalScreen[str | None]):
                 id="value",
             )
             yield Static("", id="error", classes="fail")
+            yield Static(PASTE_HINT, id="paste-hint", classes="hint")
             yield Static("enter save  -  esc cancel  -  empty value removes the key", classes="hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -168,6 +171,7 @@ class EnvEditorApp(App[None]):
         table: DataTable[Text] = self.query_one(selector=DataTable)
         table.add_columns("Variable", "Value", "Source")
         self.refresh_rows()
+        self.set_status(message="Press e to edit. Paste with Ctrl+Shift+V. Press ? for help.")
         table.focus()
 
     # -- data ---------------------------------------------------------------
