@@ -68,9 +68,20 @@ compact window. It never sets a key.
 Each login lives in its own config directory. `CLAUDE_CONFIG_DIR` selects it, and each directory has its
 own `settings.json` and its own `env` block. So each login can have its own endpoint.
 
+Example with two logins. These aliases are in `~/.config/zsh/.zshrc`:
+
 ```sh
-claude-code-env-editor --config-dir ~/.claude-work show     # per command
-alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+alias claude-work='export CLAUDE_CONFIG_DIR=~/.claude-work && claude'
+alias claude-personal='export CLAUDE_CONFIG_DIR=~/.claude-personal && claude'
+```
+
+Each alias runs `export`, so `CLAUDE_CONFIG_DIR` stays set in your shell after `claude` exits.
+The tool uses `$CLAUDE_CONFIG_DIR` as its default. So after `claude-work`, the tool edits the work login.
+To edit another login, name its directory:
+
+```sh
+claude-code-env-editor --config-dir ~/.claude-personal show
+claude-code-env-editor --config-dir ~/.claude-personal preset deepseek
 ```
 
 Inside the TUI press `d` to switch between the `~/.claude*` directories.
