@@ -1,0 +1,35 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version, tag, and GitHub Release
+        id: psr
+        uses: python-semantic-release/python-semantic-release@v9
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v5
+        if: steps.psr.outputs.released == 'true'
+      - name: Build the wheel and attach it
+        if: steps.psr.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.psr.outputs.tag }}
+        run: |
+          git fetch --tags
+          git checkout "$TAG"
+          uv build --wheel
+          (cd dist && sha256sum ./*.whl | sed 's# \./# #' > SHA256SUMS)
+          gh release upload "$TAG" dist/*.whl dist/SHA256SUMS --clobber

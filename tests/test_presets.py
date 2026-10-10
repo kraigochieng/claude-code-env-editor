@@ -1,0 +1,28 @@
+import pytest
+
+from claude_code_env_editor.envvars import BY_NAME
+from claude_code_env_editor.presets import load_presets, preset_values
+
+
+def test_every_preset_has_label_and_url():
+    for pid, body in load_presets().items():
+        assert body["label"], pid
+        assert body["ANTHROPIC_BASE_URL"].startswith("http"), pid
+
+
+def test_preset_keys_are_in_catalog():
+    for pid in load_presets():
+        for key in preset_values(pid):
+            assert key in BY_NAME, (pid, key)
+
+
+def test_deepseek_preset_matches_documented_values():
+    v = preset_values("deepseek")
+    assert v["ANTHROPIC_MODEL"] == "deepseek-flash[1m]"
+    assert v["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "786432"
+    assert "ANTHROPIC_AUTH_TOKEN" not in v
+
+
+def test_unknown_preset():
+    with pytest.raises(KeyError):
+        preset_values("nope")

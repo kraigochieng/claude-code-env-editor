@@ -1,0 +1,36 @@
+# Sample endpoints. Verify each URL and model name before you rely on it. They change.
+
+[anthropic]
+label = "Anthropic (default)"
+ANTHROPIC_BASE_URL = "https://api.anthropic.com"
+
+[openrouter]
+label = "OpenRouter"
+ANTHROPIC_BASE_URL = "https://openrouter.ai/api"
+
+[zai]
+label = "Z.ai (GLM)"
+ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic"
+
+[moonshot]
+label = "Moonshot (Kimi)"
+ANTHROPIC_BASE_URL = "https://api.moonshot.ai/anthropic"
+
+[deepseek]
+label = "DeepSeek"
+ANTHROPIC_BASE_URL = "https://api.deepseek.com/anthropic"
+ANTHROPIC_MODEL = "deepseek-flash[1m]"
+ANTHROPIC_DEFAULT_OPUS_MODEL = "deepseek-flash[1m]"
+ANTHROPIC_DEFAULT_SONNET_MODEL = "deepseek-flash[1m]"
+ANTHROPIC_DEFAULT_HAIKU_MODEL = "deepseek-flash"
+CLAUDE_CODE_SUBAGENT_MODEL = "deepseek-flash"
+CLAUDE_CODE_EFFORT_LEVEL = "max"
+CLAUDE_CODE_AUTO_COMPACT_WINDOW = "786432"
+
+[litellm]
+label = "Local LiteLLM proxy"
+ANTHROPIC_BASE_URL = "http://localhost:4000"
+
+[ollama]
+label = "Local Ollama"
+ANTHROPIC_BASE_URL = "http://localhost:11434"
