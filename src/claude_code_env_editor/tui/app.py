@@ -32,13 +32,16 @@ HELP_KEYS = (
 
 
 class EditScreen(ModalScreen[str | None]):
+    """Dialog to type a new value for one variable."""
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, row: Row) -> None:
+        """Keep the row to edit."""
         super().__init__()
         self.row = row
 
     def compose(self) -> ComposeResult:
+        """Build the dialog: name, help text, input, error line, hint."""
         spec = self.row.spec
         with Vertical(classes="dialog"):
             yield Static(self.row.name, classes="heading")
@@ -53,6 +56,7 @@ class EditScreen(ModalScreen[str | None]):
             yield Static("enter save  -  esc cancel  -  empty value removes the key", classes="hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Check the typed value. Close the dialog when it is good, else show the error."""
         value = event.value.strip()
         if value and self.row.spec and (err := validate(self.row.spec, value)):
             self.query_one("#error", Static).update(err)
@@ -60,50 +64,62 @@ class EditScreen(ModalScreen[str | None]):
         self.dismiss(value)
 
     def action_cancel(self) -> None:
+        """Close the dialog without a change."""
         self.dismiss(None)
 
 
 class PickScreen(ModalScreen[str | None]):
+    """Dialog to choose one item from a list."""
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
     def __init__(self, title: str, options: list[tuple[str, str]]) -> None:
+        """Keep the title and the (id, label) options."""
         super().__init__()
         self.title_text, self.options = title, options
 
     def compose(self) -> ComposeResult:
+        """Build the dialog: title, option list, hint."""
         with Vertical(classes="dialog"):
             yield Static(self.title_text, classes="heading")
             yield OptionList(*[Option(label, id=key) for key, label in self.options])
             yield Static("enter choose  -  esc cancel", classes="hint")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Close the dialog and return the id of the chosen option."""
         self.dismiss(event.option.id)
 
     def action_cancel(self) -> None:
+        """Close the dialog without a choice."""
         self.dismiss(None)
 
 
 class TextScreen(ModalScreen[None]):
+    """Dialog that shows read-only text."""
     BINDINGS = [Binding("escape", "close", "Close"), Binding("enter", "close", "Close")]
 
     def __init__(self, title: str, body: Text) -> None:
+        """Keep the title and the text to show."""
         super().__init__()
         self.title_text, self.body = title, body
 
     def compose(self) -> ComposeResult:
+        """Build the dialog: title, text, hint."""
         with Vertical(classes="dialog"):
             yield Static(self.title_text, classes="heading")
             yield Static(self.body, id="body")
             yield Static("esc close", classes="hint")
 
     def action_close(self) -> None:
+        """Close the dialog."""
         self.dismiss(None)
 
     def update_body(self, body: Text) -> None:
+        """Replace the text in the open dialog."""
         self.query_one("#body", Static).update(body)
 
 
 class EnvEditorApp(App):
+    """The main screen: a table of variables and the actions on them."""
     CSS_PATH = "theme.tcss"
     TITLE = "claude-code-env-editor"
     BINDINGS = [
@@ -118,12 +134,14 @@ class EnvEditorApp(App):
     ]
 
     def __init__(self, config_dir: Path) -> None:
+        """Keep the config directory. Secrets start hidden."""
         super().__init__()
         self.config_dir = config_dir
         self.reveal = False
         self.rows: list[Row] = []
 
     def compose(self) -> ComposeResult:
+        """Build the banner, the table, the status line, and the footer."""
         yield Static(id="banner")
         with Vertical(id="table-box"):
             yield DataTable(cursor_type="row", zebra_stripes=False)
@@ -131,6 +149,7 @@ class EnvEditorApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Create the table columns and fill the rows."""
         table = self.query_one(DataTable)
         table.add_columns("Variable", "Value", "Source")
         self.refresh_rows()
@@ -139,6 +158,7 @@ class EnvEditorApp(App):
     # -- data ---------------------------------------------------------------
 
     def refresh_rows(self, keep: str | None = None) -> None:
+        """Read the variables again and redraw the table. Keep the cursor on the row named keep."""
         try:
             self.rows = resolve(config.load_env(self.config_dir), os.environ)
         except config.ConfigError as exc:
@@ -162,6 +182,7 @@ class EnvEditorApp(App):
         self.query_one("#banner", Static).update(self._banner())
 
     def _banner(self) -> Text:
+        """Build the banner text: version, config directory, and endpoint host."""
         t = Text()
         t.append("* claude-code-env-editor", style="bold #d97757")
         t.append(f"  v{__version__}\n", style="dim")
@@ -173,9 +194,11 @@ class EnvEditorApp(App):
         return t
 
     def set_status(self, message: str, error: bool = False) -> None:
+        """Show a message on the status line. Use red for an error."""
         self.query_one("#status", Static).update(Text(message, style="#e5534b" if error else "dim"))
 
     def selected(self) -> Row | None:
+        """Return the row under the cursor, or None."""
         table = self.query_one(DataTable)
         if not self.rows or table.cursor_row >= len(self.rows):
             return None
@@ -184,6 +207,7 @@ class EnvEditorApp(App):
     # -- actions ------------------------------------------------------------
 
     def action_edit(self) -> None:
+        """Open the edit dialog for the selected variable and save the result."""
         row = self.selected()
         if row is None:
             return
@@ -192,6 +216,7 @@ class EnvEditorApp(App):
             return
 
         def save_edited_value(value: str | None) -> None:
+            """Save the new value. An empty value removes the key."""
             if value is None:
                 return
             try:
@@ -205,6 +230,7 @@ class EnvEditorApp(App):
         self.push_screen(EditScreen(row), save_edited_value)
 
     def action_remove(self) -> None:
+        """Remove the selected variable from settings.json."""
         row = self.selected()
         if row is None or row.source == SOURCE_UNSET:
             return
@@ -213,16 +239,19 @@ class EnvEditorApp(App):
         self.set_status(f"Removed {row.name} from settings.json.")
 
     def action_reveal(self) -> None:
+        """Toggle between masked and full secret values."""
         self.reveal = not self.reveal
         row = self.selected()
         self.refresh_rows(keep=row.name if row else None)
         self.set_status("Secrets are visible." if self.reveal else "Secrets are hidden.")
 
     def action_preset(self) -> None:
+        """Open the preset list and apply the chosen preset."""
         presets = load_presets()
         options = [(pid, f"{body['label']:<24} {body['ANTHROPIC_BASE_URL']}") for pid, body in presets.items()]
 
         def apply_chosen_preset(pid: str | None) -> None:
+            """Write the preset values to settings.json."""
             if not pid:
                 return
             values = preset_values(pid)
@@ -233,12 +262,14 @@ class EnvEditorApp(App):
         self.push_screen(PickScreen("Apply a preset", options), apply_chosen_preset)
 
     def action_switch_dir(self) -> None:
+        """Open the config directory list and switch to the chosen one."""
         dirs = config.discover_config_dirs()
         if self.config_dir not in dirs:
             dirs.insert(0, self.config_dir)
         options = [(str(d), str(d)) for d in dirs]
 
         def use_chosen_dir(choice: str | None) -> None:
+            """Switch to the chosen config directory."""
             if choice:
                 self.config_dir = Path(choice)
                 self.refresh_rows()
@@ -247,6 +278,7 @@ class EnvEditorApp(App):
         self.push_screen(PickScreen("Switch config directory", options), use_chosen_dir)
 
     def action_help(self) -> None:
+        """Open the help screen with the keys."""
         body = Text()
         for key, text in HELP_KEYS:
             body.append(f"{key:<12}", style="bold #d97757")
@@ -256,6 +288,7 @@ class EnvEditorApp(App):
         self.push_screen(TextScreen("Help", body))
 
     def action_verify(self) -> None:
+        """Open the verify dialog and start the checks in a thread."""
         values = {r.name: r.value for r in self.rows if r.value}
         screen = TextScreen("Verify", Text(f"Sending requests to {target_host(values)} only...", style="dim"))
         self.push_screen(screen)
@@ -263,11 +296,13 @@ class EnvEditorApp(App):
 
     @work(thread=True)
     def _run_verify(self, screen: TextScreen, values: dict[str, str]) -> None:
+        """Run the checks in a worker thread. Show the result in the dialog."""
         checks = verify(values)
         self.call_from_thread(screen.update_body, self._render_checks(checks, values))
 
     @staticmethod
     def _render_checks(checks: list[Check], values: dict[str, str]) -> Text:
+        """Format the check results as text for the dialog."""
         body = Text(f"Host: {target_host(values)}\n\n", style="dim")
         for c in checks:
             mark, style = {PASS: ("ok  ", "#7fb069"), FAIL: ("FAIL", "#e5534b")}.get(c.status, ("skip", "dim"))
@@ -280,5 +315,6 @@ class EnvEditorApp(App):
 
 
 def run(config_dir: Path) -> int:
+    """Open the interface for one config directory."""
     EnvEditorApp(config_dir).run()
     return 0

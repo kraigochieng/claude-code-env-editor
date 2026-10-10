@@ -10,6 +10,7 @@ STRING, URL, SECRET, INTEGER, CHOICE = "string", "url", "secret", "integer", "ch
 
 @dataclass(frozen=True)
 class VarSpec:
+    """The definition of one variable: name, type, help text, and an example value."""
     name: str
     kind: str
     help: str
@@ -19,6 +20,7 @@ class VarSpec:
 
     @property
     def secret(self) -> bool:
+        """Return True when the value must be masked on screen."""
         return self.kind == SECRET
 
 
@@ -72,6 +74,7 @@ def validate(spec: VarSpec, value: str) -> str | None:
 
 @dataclass(frozen=True)
 class Row:
+    """One line of the variable table: the name, the value, and where the value comes from."""
     name: str
     value: str
     source: str
@@ -79,10 +82,12 @@ class Row:
 
     @property
     def secret(self) -> bool:
+        """Return True when this row holds a secret."""
         return bool(self.spec and self.spec.secret)
 
     @property
     def display(self) -> str:
+        """Return the value as shown on screen, with secrets masked."""
         return mask(self.value, self.secret) if self.value else ""
 
 
