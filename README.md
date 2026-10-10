@@ -34,6 +34,8 @@ claude-code-env-editor help set
 
 `cce` is a short alias. Inside the TUI press `?` for the key list.
 
+**Paste a key with `Ctrl+Shift+V`.** A terminal does not use `Ctrl+V`. On macOS use `Cmd+V`. This works in the value box of the edit dialog.
+
 | Key | Action |
 |---|---|
 | `e` / `enter` | Edit the selected variable |

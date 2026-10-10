@@ -11,6 +11,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
@@ -29,9 +30,11 @@ from claude_code_env_editor.presets import Preset, load_presets, preset_values
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 REMOVE_CHOICE: Final[str] = "__remove__"
+PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a terminal)."
 
 HELP_KEYS: Final[tuple[tuple[str, str], ...]] = (
     ("e / enter", "Edit the selected variable"),
+    ("ctrl+shift+v", "Paste in a value box. A terminal does not use Ctrl+V"),
     ("v", "Verify the endpoint, the key, and the model"),
     ("r", "Reveal or hide secret values"),
     ("p", "Apply a preset endpoint"),
@@ -64,6 +67,7 @@ class EditScreen(ModalScreen[str | None]):
                 id="value",
             )
             yield Static("", id="error", classes="fail")
+            yield Static(PASTE_HINT, id="paste-hint", classes="hint")
             yield Static("enter save  -  esc cancel  -  empty value removes the key", classes="hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -125,8 +129,11 @@ class TextScreen(ModalScreen[None]):
         self.dismiss(result=None)
 
     def update_body(self, body: Text) -> None:
-        """Replace the text in the open dialog."""
-        self.query_one(selector="#body", expect_type=Static).update(body)
+        """Replace the text in the open dialog. Do nothing when the dialog is already closed."""
+        try:
+            self.query_one(selector="#body", expect_type=Static).update(body)
+        except NoMatches:
+            return
 
 
 class EnvEditorApp(App[None]):
@@ -165,6 +172,7 @@ class EnvEditorApp(App[None]):
         table: DataTable[Text] = self.query_one(selector=DataTable)
         table.add_columns("Variable", "Value", "Source")
         self.refresh_rows()
+        self.set_status(message="Press e to edit. Paste with Ctrl+Shift+V. Press ? for help.")
         table.focus()
 
     # -- data ---------------------------------------------------------------
@@ -332,7 +340,10 @@ class EnvEditorApp(App[None]):
     def _run_verify(self, screen: TextScreen, endpoint: Endpoint, login_found: bool) -> None:
         """Run the checks in a worker thread. Show the result in the dialog."""
         checks: list[Check] = verify(endpoint=endpoint, login_found=login_found)
-        self.call_from_thread(screen.update_body, self._render_checks(checks=checks, endpoint=endpoint))
+        try:
+            self.call_from_thread(screen.update_body, self._render_checks(checks=checks, endpoint=endpoint))
+        except RuntimeError:  # the app has closed while the checks ran
+            return
 
     @staticmethod
     def _render_checks(checks: list[Check], endpoint: Endpoint) -> Text:
