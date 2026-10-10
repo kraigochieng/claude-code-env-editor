@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v0.2.0 (2026-10-10)
+
+### Refactoring
+
+- Remove the secret store
+  ([`2e5c573`](https://github.com/kraigochieng/claude-code-env-editor/commit/2e5c5734e1f2534997ccbe46d392ebca8fab2f9b))
+
+A secret now goes only to settings.json (mode 0600). The keyring and vault copy was never read by
+  Claude Code. --no-write-secret now prints an export line and writes nothing.
+
+BREAKING CHANGE: the keyring and encrypted vault are removed, and --no-write-secret no longer saves
+  a copy.
+
+Refs #5
+
+- Use absolute imports
+  ([`6a6f212`](https://github.com/kraigochieng/claude-code-env-editor/commit/6a6f21281ecfe962add77f0ee89d24a555c5ccad))
+
+Refs #3
+
+### Breaking Changes
+
+- The keyring and encrypted vault are removed, and
+
+
 ## v0.1.0 (2026-10-10)
 
 ### Chores
