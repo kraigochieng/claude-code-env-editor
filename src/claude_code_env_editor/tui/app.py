@@ -24,7 +24,7 @@ from claude_code_env_editor.envvars import (
     validate,
 )
 from claude_code_env_editor.presets import Preset, load_presets, preset_values
-from claude_code_env_editor.verify import FAIL, PASS, Check, Endpoint, verify
+from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 HELP_KEYS: Final[tuple[tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str], tuple[str, str]]] = (
     ("e / enter", "Edit the selected variable"),
@@ -302,12 +302,13 @@ class EnvEditorApp(App[None]):
         endpoint: Endpoint = self._endpoint()
         screen: TextScreen = TextScreen(title="Verify", body=Text(text=f"Sending requests to {endpoint.host} only...", style="dim"))
         self.push_screen(screen=screen)
-        self._run_verify(screen=screen, endpoint=endpoint)
+        login_found: bool = config.has_login(config_dir=self.config_dir)
+        self._run_verify(screen=screen, endpoint=endpoint, login_found=login_found)
 
     @work(thread=True)
-    def _run_verify(self, screen: TextScreen, endpoint: Endpoint) -> None:
+    def _run_verify(self, screen: TextScreen, endpoint: Endpoint, login_found: bool) -> None:
         """Run the checks in a worker thread. Show the result in the dialog."""
-        checks: list[Check] = verify(endpoint=endpoint)
+        checks: list[Check] = verify(endpoint=endpoint, login_found=login_found)
         self.call_from_thread(screen.update_body, self._render_checks(checks=checks, endpoint=endpoint))
 
     @staticmethod
@@ -319,7 +320,13 @@ class EnvEditorApp(App[None]):
             body.append(f"{mark}  ", style=style)
             body.append(f"{c.name:<12}")
             body.append(f"{c.detail}\n", style="dim")
-        verdict: str = "Some checks failed." if any(c.status == FAIL for c in checks) else "All checks passed."
+        failed: bool = any(c.status == FAIL for c in checks)
+        skipped: bool = any(c.status == SKIP for c in checks)
+        verdict: str = "All checks passed."
+        if failed:
+            verdict = "Some checks failed."
+        elif skipped:
+            verdict = "No check failed. Some checks were skipped."
         body.append(f"\n{verdict}")
         return body
 

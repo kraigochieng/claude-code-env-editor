@@ -89,6 +89,26 @@ def discover_config_dirs(
     return unique
 
 
+def has_login(config_dir: Path, home: Path | None = None) -> bool:
+    """Return True when Claude Code stored a login for this config directory.
+
+    Only the presence of the oauthAccount key is checked. The account data and the token are never read out.
+    The default directory keeps its file in the home directory (~/.claude.json). Others keep it inside.
+    """
+    home_dir: Path = home or Path.home()
+    candidates: list[Path] = [config_dir / ".claude.json"]
+    if config_dir == home_dir / ".claude":
+        candidates.append(home_dir / ".claude.json")
+    for candidate in candidates:
+        try:
+            content: object = json.loads(s=candidate.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(content, dict) and "oauthAccount" in content:
+            return True
+    return False
+
+
 def settings_path(config_dir: Path) -> Path:
     """Return the path of settings.json in a config directory."""
     return config_dir / SETTINGS_NAME
