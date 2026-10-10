@@ -28,6 +28,7 @@ from claude_code_env_editor.registry import (
     load_registry,
     remove_from_registry,
 )
+from claude_code_env_editor.target import Target
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 CONFIG_DIR_VARIABLE: Final[str] = "CLAUDE_CONFIG_DIR"
@@ -116,22 +117,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _chosen_config_dir(args: argparse.Namespace) -> Path:
-    """Return the config directory the user chose, or the default."""
-    return args.config_dir.expanduser() if args.config_dir else config.default_config_dir()
+def _chosen_target(args: argparse.Namespace) -> Target:
+    """Return the target for the config directory the user chose, or for the default one."""
+    config_dir: Path = args.config_dir.expanduser() if args.config_dir else config.default_config_dir()
+    return Target.from_config_dir(config_dir=config_dir)
 
 
-def _values_in_effect(config_dir: Path) -> dict[str, str]:
+def _values_in_effect(target: Target) -> dict[str, str]:
     """Return {name: value} for every variable that has a value now."""
-    rows: list[Row] = resolve(settings_env=config.load_env(config_dir=config_dir), environ=os.environ)
+    rows: list[Row] = resolve(settings_env=config.load_env(settings_file=target.settings_file), environ=os.environ)
     return {r.name: r.value for r in rows if r.source != SOURCE_UNSET}
 
 
 def cmd_show(args: argparse.Namespace) -> int:
     """Print each variable with its value and source."""
-    config_dir: Path = _chosen_config_dir(args=args)
-    print(f"config dir: {config_dir}")
-    rows: list[Row] = visible_rows(rows=resolve(settings_env=config.load_env(config_dir=config_dir), environ=os.environ))
+    target: Target = _chosen_target(args=args)
+    print(f"config dir: {target.config_dir}")
+    rows: list[Row] = visible_rows(
+        rows=resolve(settings_env=config.load_env(settings_file=target.settings_file), environ=os.environ)
+    )
     for row in rows:
         value: str = row.value if args.reveal else row.display
         note: str = "  (the shell has another value. Claude Code ignores it)" if row.shell_value else ""
@@ -162,11 +166,11 @@ def cmd_set(args: argparse.Namespace) -> int:
     if spec and (err := validate(spec=spec, value=value)):
         print(err, file=sys.stderr)
         return 2
-    config_dir: Path = _chosen_config_dir(args=args)
+    target: Target = _chosen_target(args=args)
     if spec and spec.secret and args.no_write_secret:
         print(f"Nothing written. Run this in your shell:\n  export {args.name}={_shell_quote(value=value)}")
         return 0
-    path: Path = config.update_env(config_dir=config_dir, updates={args.name: value})
+    path: Path = config.update_env(settings_file=target.settings_file, updates={args.name: value})
     shown: str = mask(value=value, secret=bool(spec and spec.secret))
     print(f"Set {args.name}={shown} in {path}")
     return 0
@@ -174,7 +178,7 @@ def cmd_set(args: argparse.Namespace) -> int:
 
 def cmd_unset(args: argparse.Namespace) -> int:
     """Remove one variable from settings.json."""
-    path: Path = config.update_env(config_dir=_chosen_config_dir(args=args), updates={args.name: None})
+    path: Path = config.update_env(settings_file=_chosen_target(args=args).settings_file, updates={args.name: None})
     print(f"Removed {args.name} from {path}")
     return 0
 
@@ -191,7 +195,7 @@ def cmd_preset(args: argparse.Namespace) -> int:
     except KeyError as exc:
         print(exc.args[0], file=sys.stderr)
         return 2
-    path: Path = config.update_env(config_dir=_chosen_config_dir(args=args), updates=values)
+    path: Path = config.update_env(settings_file=_chosen_target(args=args).settings_file, updates=values)
     print(f"Applied preset '{args.name}' ({len(values)} variables) to {path}")
     if "ANTHROPIC_AUTH_TOKEN" not in values:
         print(f"Next: {PROG} set ANTHROPIC_AUTH_TOKEN")
@@ -200,10 +204,10 @@ def cmd_preset(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run the verify checks and return 1 if any check failed."""
-    config_dir: Path = _chosen_config_dir(args=args)
-    endpoint: Endpoint = Endpoint.from_values(values=_values_in_effect(config_dir=config_dir))
+    target: Target = _chosen_target(args=args)
+    endpoint: Endpoint = Endpoint.from_values(values=_values_in_effect(target=target))
     print(f"Sending requests to {endpoint.host} only.")
-    checks: list[Check] = verify(endpoint=endpoint, login_found=config.has_login(config_dir=config_dir))
+    checks: list[Check] = verify(endpoint=endpoint, login_found=config.has_login(config_dir=target.config_dir))
     for c in checks:
         print(f"[{MARKS[c.status]}] {c.name:<12} {c.detail}")
     return 1 if any(c.status == FAIL for c in checks) else 0
@@ -211,7 +215,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     """Print 'export NAME=value' lines for the variables that have a value."""
-    for row in resolve(settings_env=config.load_env(config_dir=_chosen_config_dir(args=args)), environ=os.environ):
+    for row in resolve(settings_env=config.load_env(settings_file=_chosen_target(args=args).settings_file), environ=os.environ):
         if row.source == SOURCE_UNSET or not row.spec:
             continue
         value: str = row.value if args.reveal else row.display
@@ -284,7 +288,7 @@ def cmd_tui(args: argparse.Namespace) -> int:
     """Open the full-screen interface."""
     from claude_code_env_editor.tui.app import run
 
-    return run(config_dir=_chosen_config_dir(args=args))
+    return run(config_dir=_chosen_target(args=args).config_dir)
 
 
 def main(argv: list[str] | None = None) -> int:

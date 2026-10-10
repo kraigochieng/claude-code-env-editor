@@ -114,9 +114,9 @@ def settings_path(config_dir: Path) -> Path:
     return config_dir / SETTINGS_NAME
 
 
-def load_settings(config_dir: Path) -> Settings:
-    """Read settings.json. Return empty settings when the file is missing."""
-    path: Path = settings_path(config_dir=config_dir)
+def load_settings(settings_file: Path) -> Settings:
+    """Read a settings file. Return empty settings when the file is missing."""
+    path: Path = settings_file
     if not path.exists():
         return Settings()
     try:
@@ -129,25 +129,24 @@ def load_settings(config_dir: Path) -> Settings:
         raise ConfigError(f"{path} has a wrong shape: {exc.errors()[0]['msg']} at {exc.errors()[0]['loc']}.") from exc
 
 
-def load_env(config_dir: Path) -> dict[str, str]:
-    """Return the env block of settings.json as {name: value}."""
-    return load_settings(config_dir=config_dir).env
+def load_env(settings_file: Path) -> dict[str, str]:
+    """Return the env block of a settings file as {name: value}."""
+    return load_settings(settings_file=settings_file).env
 
 
-def update_env(config_dir: Path, updates: Mapping[str, str | None]) -> Path:
-    """Merge updates into the env block. A value of None removes the key.
+def update_env(settings_file: Path, updates: Mapping[str, str | None]) -> Path:
+    """Merge updates into the env block of a settings file. A value of None removes the key.
 
-    The write is atomic. The old file is kept as settings.json.bak. The mode is 0600.
+    The write is atomic. The old file is kept as <name>.bak. The mode is 0600.
     All other keys in the file stay as they were.
     """
-    settings: Settings = load_settings(config_dir=config_dir)
+    settings: Settings = load_settings(settings_file=settings_file)
     for key, value in updates.items():
         if value is None:
             settings.env.pop(key, None)
         else:
             settings.env[key] = value
 
-    path: Path = settings_path(config_dir=config_dir)
     text: str = json.dumps(obj=settings.to_json_dict(), indent=2) + "\n"
-    atomic_write_text(path=path, text=text, keep_backup=True)
-    return path
+    atomic_write_text(path=settings_file, text=text, keep_backup=True)
+    return settings_file
