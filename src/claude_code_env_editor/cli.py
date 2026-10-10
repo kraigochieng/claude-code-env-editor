@@ -133,7 +133,8 @@ def cmd_show(args: argparse.Namespace) -> int:
     rows: list[Row] = visible_rows(rows=resolve(settings_env=config.load_env(config_dir=config_dir), environ=os.environ))
     for row in rows:
         value: str = row.value if args.reveal else row.display
-        print(f"{row.name:<34} {value or '-':<28} [{row.source}]")
+        note: str = "  (the shell has another value. Claude Code ignores it)" if row.shell_value else ""
+        print(f"{row.name:<34} {value or '-':<28} [{row.source}]{note}")
     print(f"auth: {describe(rows=rows)}")
     return 0
 

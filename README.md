@@ -105,7 +105,9 @@ Run `claude-code-env-editor vars` for the full list: `ANTHROPIC_BASE_URL`, `ANTH
 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` takes a plain integer from 100000 to 1000000 (not `500k`). The tool rejects other values.
 Other `ANTHROPIC_*` and `CLAUDE_CODE_*` keys in `settings.json` show as custom rows and are kept.
 
-The tool reads two sources. The process environment wins over the `env` block of `settings.json`.
+The tool reads two sources. The `env` block of `settings.json` wins over your shell. I tested this with Claude Code: a model
+in the `env` block overrides `ANTHROPIC_MODEL` exported in the shell. When the shell holds a different value, the table
+shows `settings (shell differs)`. Claude Code ignores the shell value.
 It writes only the `env` block. All other keys in the file stay as they were.
 
 ## Presets

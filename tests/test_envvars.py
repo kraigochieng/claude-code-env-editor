@@ -22,10 +22,25 @@ def test_mask_leaves_plain_value() -> None:
     assert mask(value="https://x", secret=False) == "https://x"
 
 
-def test_resolve_env_wins_over_settings() -> None:
-    rows: dict[str, Row] = {r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={"ANTHROPIC_MODEL": "b"})}
-    assert rows["ANTHROPIC_MODEL"].value == "b"
-    assert rows["ANTHROPIC_MODEL"].source == SOURCE_ENV
+def test_resolve_settings_win_over_the_shell() -> None:
+    rows: dict[str, Row] = {
+        r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={"ANTHROPIC_MODEL": "b"})
+    }
+    row: Row = rows["ANTHROPIC_MODEL"]
+    assert row.value == "a" and row.source == SOURCE_SETTINGS
+    assert row.shell_value == "b"
+
+
+def test_resolve_same_value_in_both_places_has_no_note() -> None:
+    rows: dict[str, Row] = {
+        r.name: r for r in resolve(settings_env={"ANTHROPIC_MODEL": "a"}, environ={"ANTHROPIC_MODEL": "a"})
+    }
+    assert rows["ANTHROPIC_MODEL"].shell_value == ""
+
+
+def test_resolve_shell_only_value_has_the_env_source() -> None:
+    rows: dict[str, Row] = {r.name: r for r in resolve(settings_env={}, environ={"ANTHROPIC_MODEL": "b"})}
+    assert rows["ANTHROPIC_MODEL"].value == "b" and rows["ANTHROPIC_MODEL"].source == SOURCE_ENV
 
 
 def test_resolve_sources() -> None:

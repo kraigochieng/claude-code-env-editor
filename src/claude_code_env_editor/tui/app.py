@@ -194,7 +194,10 @@ class EnvEditorApp(App[None]):
             table.add_row(
                 Text(text=row.name, style="bold" if row.source != SOURCE_UNSET else "dim"),
                 Text(text=value or "-", style=style),
-                Text(text=row.source, style="#d97757" if row.source != SOURCE_UNSET else "dim"),
+                Text(
+                    text=f"{row.source} (shell differs)" if row.shell_value else row.source,
+                    style="#d97757" if row.source != SOURCE_UNSET else "dim",
+                ),
                 key=row.name,
             )
         if keep:
@@ -325,7 +328,7 @@ class EnvEditorApp(App[None]):
             body.append(f"{key:<12}", style="bold #d97757")
             body.append(f"{text}\n")
         body.append("\nThe tool writes to the env block of settings.json in the config dir.\n", style="dim")
-        body.append("The process environment wins over settings.json.", style="dim")
+        body.append("settings.json wins over the shell environment.", style="dim")
         self.push_screen(screen=TextScreen(title="Help", body=body))
 
     def action_verify(self) -> None:
