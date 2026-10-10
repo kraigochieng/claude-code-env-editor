@@ -123,22 +123,22 @@ def test_unknown_keys_survive_a_write(tmp_path: Path) -> None:
 
 
 def test_has_login_in_config_dir(tmp_path: Path) -> None:
-    (tmp_path / ".claude.json").write_text(json.dumps({"oauthAccount": {"emailAddress": "x"}}))
-    assert config.has_login(tmp_path, home=tmp_path / "home") is True
+    (tmp_path / ".claude.json").write_text(data=json.dumps(obj={"oauthAccount": {"emailAddress": "x"}}))
+    assert config.has_login(config_dir=tmp_path, home=tmp_path / "home") is True
 
 
 def test_has_login_false_without_file_or_key(tmp_path: Path) -> None:
-    assert config.has_login(tmp_path, home=tmp_path / "home") is False
-    (tmp_path / ".claude.json").write_text(json.dumps({"theme": "dark"}))
-    assert config.has_login(tmp_path, home=tmp_path / "home") is False
+    assert config.has_login(config_dir=tmp_path, home=tmp_path / "home") is False
+    (tmp_path / ".claude.json").write_text(data=json.dumps(obj={"theme": "dark"}))
+    assert config.has_login(config_dir=tmp_path, home=tmp_path / "home") is False
 
 
 def test_default_directory_reads_login_from_home_file(tmp_path: Path) -> None:
     (tmp_path / ".claude").mkdir()
-    (tmp_path / ".claude.json").write_text(json.dumps({"oauthAccount": {}}))
-    assert config.has_login(tmp_path / ".claude", home=tmp_path) is True
+    (tmp_path / ".claude.json").write_text(data=json.dumps(obj={"oauthAccount": {}}))
+    assert config.has_login(config_dir=tmp_path / ".claude", home=tmp_path) is True
 
 
 def test_has_login_ignores_broken_json(tmp_path: Path) -> None:
-    (tmp_path / ".claude.json").write_text("{bad")
-    assert config.has_login(tmp_path, home=tmp_path / "home") is False
+    (tmp_path / ".claude.json").write_text(data="{bad")
+    assert config.has_login(config_dir=tmp_path, home=tmp_path / "home") is False
