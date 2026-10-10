@@ -1,6 +1,43 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-10-10)
+
+### Documentation
+
+- Add docstrings to all functions and classes
+  ([`c3fd357`](https://github.com/kraigochieng/claude-code-env-editor/commit/c3fd357d36b057613be1ea0a3617ffbcb77aa376))
+
+Refs #9
+
+- Add example for several claude code logins
+  ([`10947b0`](https://github.com/kraigochieng/claude-code-env-editor/commit/10947b008f7b08a0abbfd0f8d175b0d47dca6a78))
+
+Refs #7
+
+### Features
+
+- **cli**: Add dirs command to list, add, and remove config directories
+  ([`012a715`](https://github.com/kraigochieng/claude-code-env-editor/commit/012a715ae6e3e7e61dfcc7ca38ce76943a24938c))
+
+Closes #11
+
+- **config**: Find config directories by content, not by name
+  ([`f9c6a6f`](https://github.com/kraigochieng/claude-code-env-editor/commit/f9c6a6f7a8bff4e0b76594f12d14e4f152862d41))
+
+Refs #11
+
+- **registry**: Keep a list of config directories in the os config dir
+  ([`682ede3`](https://github.com/kraigochieng/claude-code-env-editor/commit/682ede358cf514d7fae7d8504530c6e18acb894a))
+
+Refs #11
+
+### Refactoring
+
+- Rename vague helper names to descriptive names
+  ([`23ec166`](https://github.com/kraigochieng/claude-code-env-editor/commit/23ec166ade7e572ba3c654ca8b00dd909aa6957b))
+
+
 ## v0.2.0 (2026-10-10)
 
 ### Refactoring
