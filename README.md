@@ -45,6 +45,26 @@ claude-code-env-editor help set
 | `?` | Help |
 | `q` | Quit |
 
+## Which key variable to set
+
+The two secret variables use different HTTP headers. I tested this with Claude Code, a fake local server, and fake keys.
+
+| Variable set | Header that Claude Code sends |
+|---|---|
+| `ANTHROPIC_API_KEY` only | `x-api-key: <value>` |
+| `ANTHROPIC_AUTH_TOKEN` only | `Authorization: Bearer <value>` |
+| Both | Both headers |
+
+The endpoint decides which header it accepts. So the tool picks the variable from your base URL and shows only that one:
+
+| Base URL | Variable shown |
+|---|---|
+| empty, or `api.anthropic.com` | `ANTHROPIC_API_KEY`, or no key when you use a Claude login |
+| OpenRouter, Z.ai, Moonshot, DeepSeek, LiteLLM, Ollama (the presets) | `ANTHROPIC_AUTH_TOKEN` |
+| any other URL | both variables |
+
+A hidden variable stays visible when it has a value, with a warning in the banner. The mapping comes from provider guides. Check it for your provider. If a provider rejects one header, try the other variable.
+
 ## Screenshots
 
 The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.

@@ -16,6 +16,7 @@ from textual.widgets import DataTable, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from claude_code_env_editor import __version__, config
+from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
     SOURCE_UNSET,
     Row,
@@ -167,7 +168,9 @@ class EnvEditorApp(App[None]):
     def refresh_rows(self, keep: str | None = None) -> None:
         """Read the variables again and redraw the table. Keep the cursor on the row named keep."""
         try:
-            self.rows = resolve(settings_env=config.load_env(config_dir=self.config_dir), environ=os.environ)
+            self.rows = visible_rows(
+                rows=resolve(settings_env=config.load_env(config_dir=self.config_dir), environ=os.environ)
+            )
         except config.ConfigError as exc:
             self.rows = []
             self.set_status(message=str(exc), error=True)
@@ -200,7 +203,9 @@ class EnvEditorApp(App[None]):
         t.append("config dir  ", style="dim")
         t.append(f"{self.config_dir}\n")
         t.append("endpoint    ", style="dim")
-        t.append(self._endpoint().host)
+        t.append(f"{self._endpoint().host}\n")
+        t.append("auth        ", style="dim")
+        t.append(describe(rows=self.rows))
         return t
 
     def set_status(self, message: str, error: bool = False) -> None:
