@@ -1,6 +1,37 @@
 # CHANGELOG
 
 
+## v0.8.0 (2026-10-10)
+
+### Features
+
+- **apply**: Plan what a profile changes in a settings file
+  ([`e8025cf`](https://github.com/kraigochieng/claude-code-env-editor/commit/e8025cfc4d2d1cf5882ee1dd2723eae551360b63))
+
+Replace mode removes the known variables that the profile does not list and keeps a key when the
+  endpoint host stays the same. Merge mode changes only the listed variables. A key is refused for a
+  file that may be committed.
+
+Refs #52
+
+- **cli**: Apply profiles and point commands at any settings file
+  ([`9ed999a`](https://github.com/kraigochieng/claude-code-env-editor/commit/9ed999ae7500ab07aab413c7dc6dfde9616b2284))
+
+profile apply shows the changes, asks, and writes. It has --merge, --dry-run, --yes, and
+  --allow-secret-in-shared-file. --file PATH works on show, set, unset, preset, verify, export, and
+  profile. preset NAME keeps its behavior and runs through the same code.
+
+Closes #52
+
+- **target**: Point a target at any settings file
+  ([`737991c`](https://github.com/kraigochieng/claude-code-env-editor/commit/737991cae6369428ea1a9d2d7df2aad17d150792))
+
+from_file marks a settings.json in a known config directory as user level. Any other file, such as a
+  project file, uses the default login.
+
+Refs #52
+
+
 ## v0.7.0 (2026-10-10)
 
 ### Features
