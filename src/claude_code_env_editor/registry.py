@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 import json
 from pathlib import Path
 
 from platformdirs import user_config_dir
 from pydantic import BaseModel, ValidationError
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # Python 3.10
+else:  # Python 3.10
     import tomli as tomllib
 
 APP_NAME = "claude-code-env-editor"

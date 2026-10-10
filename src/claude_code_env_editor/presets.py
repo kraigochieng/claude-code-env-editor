@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from importlib import resources
 
 from pydantic import BaseModel, ConfigDict
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:  # Python 3.10
+else:  # Python 3.10
     import tomli as tomllib
 
 

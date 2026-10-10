@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Literal, Mapping
+from typing import Final, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict
 
 VarKind = Literal["string", "url", "secret", "integer", "choice"]
-STRING, URL, SECRET, INTEGER, CHOICE = "string", "url", "secret", "integer", "choice"
+Source = Literal["env", "settings", "unset"]
+
+STRING: Final = "string"
+URL: Final = "url"
+SECRET: Final = "secret"
+INTEGER: Final = "integer"
+CHOICE: Final = "choice"
 
 
 class VarSpec(BaseModel):
@@ -48,7 +54,9 @@ CATALOG: tuple[VarSpec, ...] = (
 BY_NAME: dict[str, VarSpec] = {v.name: v for v in CATALOG}
 CUSTOM_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_")
 
-SOURCE_ENV, SOURCE_SETTINGS, SOURCE_UNSET = "env", "settings", "unset"
+SOURCE_ENV: Final = "env"
+SOURCE_SETTINGS: Final = "settings"
+SOURCE_UNSET: Final = "unset"
 
 
 def mask(value: str, secret: bool = True) -> str:
@@ -77,7 +85,7 @@ class Row(BaseModel):
 
     name: str
     value: str
-    source: Literal["env", "settings", "unset"]
+    source: Source
     spec: VarSpec | None = None  # None for a custom variable
 
     @property

@@ -118,7 +118,7 @@ class TextScreen(ModalScreen[None]):
         self.query_one(selector="#body", expect_type=Static).update(body)
 
 
-class EnvEditorApp(App):
+class EnvEditorApp(App[None]):
     """The main screen: a table of variables and the actions on them."""
     CSS_PATH = "theme.tcss"
     TITLE = "claude-code-env-editor"
