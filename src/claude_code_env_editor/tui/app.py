@@ -17,7 +17,6 @@ from textual.widgets.option_list import Option
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.envvars import SOURCE_UNSET, Row, mask, resolve, validate
 from claude_code_env_editor.presets import load_presets, preset_values
-from claude_code_env_editor.secrets import SecretStore
 from claude_code_env_editor.verify import FAIL, PASS, Check, target_host, verify
 
 HELP_KEYS = (
@@ -123,7 +122,6 @@ class EnvEditorApp(App):
         self.config_dir = config_dir
         self.reveal = False
         self.rows: list[Row] = []
-        self._store: SecretStore | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(id="banner")
@@ -183,11 +181,6 @@ class EnvEditorApp(App):
             return None
         return self.rows[table.cursor_row]
 
-    def secret_store(self) -> SecretStore:
-        if self._store is None:
-            self._store = SecretStore(passphrase=lambda: "")
-        return self._store
-
     # -- actions ------------------------------------------------------------
 
     def action_edit(self) -> None:
@@ -206,21 +199,10 @@ class EnvEditorApp(App):
             except config.ConfigError as exc:
                 self.set_status(str(exc), error=True)
                 return
-            if row.secret and value:
-                self._remember_secret(row.name, value)
             self.refresh_rows(keep=row.name)
             self.set_status(f"Saved {row.name}." if value else f"Removed {row.name}.")
 
         self.push_screen(EditScreen(row), done)
-
-    def _remember_secret(self, name: str, value: str) -> None:
-        store = self.secret_store()
-        if store.backend != "keyring":
-            return  # the file vault needs a passphrase prompt. Use the CLI for that.
-        try:
-            store.set(f"{self.config_dir}:{name}", value)
-        except Exception:  # keyring errors must not block the edit
-            pass
 
     def action_remove(self) -> None:
         row = self.selected()

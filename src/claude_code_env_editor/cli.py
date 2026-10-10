@@ -11,7 +11,6 @@ from pathlib import Path
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.envvars import BY_NAME, CATALOG, SOURCE_UNSET, mask, resolve, validate
 from claude_code_env_editor.presets import load_presets, preset_values
-from claude_code_env_editor.secrets import SecretsError, SecretStore
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, target_host, verify
 
 PROG = "claude-code-env-editor"
@@ -62,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-write-secret",
         action="store_true",
-        help="For a secret: save it only in the keyring or vault. Do not write it to settings.json.",
+        help="For a secret: do not write it to settings.json. Print an export line instead.",
     )
 
     p = add("unset", "Remove one variable from the env block.", f"{PROG} unset ANTHROPIC_MODEL")
@@ -94,14 +93,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _dir(args) -> Path:
     return args.config_dir.expanduser() if args.config_dir else config.default_config_dir()
-
-
-def _passphrase() -> str:
-    return getpass.getpass("No OS keyring found. Vault passphrase: ")
-
-
-def _store() -> SecretStore:
-    return SecretStore(passphrase=_passphrase)
 
 
 def _values(config_dir: Path) -> dict[str, str]:
@@ -139,12 +130,9 @@ def cmd_set(args) -> int:
         print(err, file=sys.stderr)
         return 2
     config_dir = _dir(args)
-    if spec and spec.secret:
-        _store().set(f"{config_dir}:{args.name}", value)
-        if args.no_write_secret:
-            print(f"Saved {args.name} in the secret store only. Claude Code does not read it from there.")
-            print(f"Export it with: export {args.name}=...")
-            return 0
+    if spec and spec.secret and args.no_write_secret:
+        print(f"Nothing written. Run this in your shell:\n  export {args.name}={_quote(value)}")
+        return 0
     path = config.update_env(config_dir, {args.name: value})
     shown = mask(value, bool(spec and spec.secret))
     print(f"Set {args.name}={shown} in {path}")
@@ -252,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
     }[args.command]
     try:
         return handler(args)
-    except (config.ConfigError, SecretsError) as exc:
+    except config.ConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
