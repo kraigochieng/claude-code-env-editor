@@ -3,6 +3,36 @@
 A terminal UI to view, edit, and verify the Anthropic variables that Claude Code reads.
 Point Claude Code at another endpoint without hand-editing JSON or shell files.
 
+## What Claude Code already does
+
+Use Claude Code itself for these. This tool does not replace them.
+
+| Need | Claude Code feature |
+|---|---|
+| Switch the model | `/model` (picker or name), `--model`, `ANTHROPIC_MODEL`. `/model` saves your choice as the default. |
+| Change theme, editor mode, verbosity | `/config` (a short list of options, not every key) |
+| See which settings files loaded | `/status` (the `Setting sources` line) and `claude doctor` |
+
+## What this tool adds
+
+Claude Code has no menu for the `env` block of `settings.json`, and no command to test an endpoint.
+This tool gives you:
+
+- **Provider setup.** One preset sets the base URL, the model aliases, and the other variables together.
+- **Verify.** It checks the URL, the key, and the model name before you start a session, and explains a failure.
+- **The right key variable.** It shows `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` based on the base URL.
+- **Safe editing.** It validates values, masks secrets, and writes the file atomically with mode `0600`.
+- **Several logins.** It finds and switches config directories.
+
+Do not use this tool only to switch the model. `/model` does that better.
+
+## What this tool does not see
+
+The tool edits the user `settings.json` of one config directory. Claude Code also reads higher levels:
+managed settings, the `--settings` flag, `.claude/settings.local.json`, and `.claude/settings.json` in a project.
+A value there can override your `env` block, and this tool cannot see it. Run `/status` in Claude Code to see
+which files loaded.
+
 ## Install
 
 ```sh
@@ -43,7 +73,7 @@ claude-code-env-editor help set
 | `r` | Reveal or hide secrets |
 | `p` | Apply a preset |
 | `d` | Switch config directory |
-| `x` | Remove the variable |
+| `x` | Remove the variable (asks first) |
 | `?` | Help |
 | `q` | Quit |
 
