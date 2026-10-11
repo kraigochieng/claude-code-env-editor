@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar, Final, Literal, TypeAlias
 
@@ -117,18 +117,3 @@ def destination_state(profile: Profile, destination: Destination) -> Destination
         name for name in set(known) | set(profile.variables) if known.get(name) != profile.variables.get(name)
     )
     return DestinationState(kind="differs", differing=names)
-
-
-def applied_in(
-    profiles: Mapping[str, Profile], destinations: Sequence[Destination]
-) -> dict[str, list[Destination]]:
-    """Return {profile name: destinations whose file matches the profile}. Each file is read once."""
-    result: dict[str, list[Destination]] = {name: [] for name in profiles}
-    for destination in destinations:
-        known: dict[str, str] | None = known_variables(destination=destination)
-        if not known:
-            continue
-        for name, profile in profiles.items():
-            if profile.variables == known:
-                result[name].append(destination)
-    return result

@@ -69,15 +69,14 @@ claude-code-env-editor help set
 
 The TUI has two pages. Neither page shows a file or a config directory. A folder appears only when you apply.
 
-**Profile list (main page).** Your profiles, with the endpoint, whether the profile holds a key, and the login
-folders where the profile is applied now (`Applied in`).
+**Profile list (main page).** Your profiles, with the endpoint and whether the profile holds a key.
 
 | Key | Action |
 |---|---|
-| `enter` | Open the profile and see its variables |
+| `right arrow` / `enter` | Open the profile and see its variables |
 | `a` | Apply the profile (replace mode). You choose the place, then review the changes |
 | `m` | Apply the profile in merge mode |
-| `n` | New profile: from a template, from the values of a folder, or as a copy of a profile |
+| `n` | New profile from scratch: type a name, then set its variables |
 | `r` | Rename the profile |
 | `x` | Delete the profile (asks first) |
 | `v` | Verify the endpoint, the key, and the model of the profile |
@@ -87,13 +86,12 @@ folders where the profile is applied now (`Applied in`).
 
 | Key | Action |
 |---|---|
-| `e` / `enter` | Edit the selected variable. The change goes to `profiles.toml` |
+| `e` / `enter` | Edit the selected variable. The change goes to `profiles.toml`. In the edit box of a key, `Ctrl+R` shows or hides the key |
 | `x` | Remove the variable (asks first) |
-| `r` | Reveal or hide secrets |
 | `a` / `m` | Apply the profile (replace or merge) |
 | `c` | Copy the profile under a new name, then edit the copy |
 | `v` | Verify the endpoint, the key, and the model |
-| `esc` | Back to the profile list |
+| `left arrow` / `esc` | Back to the profile list |
 
 ## Profiles
 
@@ -150,8 +148,11 @@ After you choose a place, a dialog lists every change, with secrets masked. It w
 with a key is refused for a file that may be committed, and the status line says why. The CLI option
 `--allow-secret-in-shared-file` is the only way to override that.
 
-`n` makes a new profile. A folder import takes the known variables of a login folder or of a project folder, and asks
-whether the key goes into the profile.
+`n` makes a new empty profile from scratch. You type a name, and the tool opens the profile so that you can set its
+variables. To start from a template, to copy a profile, or to import the values of a folder, use the CLI:
+`profile save NAME --from TEMPLATE`, or `profile save NAME --config-dir DIR`. In the TUI, `c` on a profile page copies it.
+
+Profile names are unique. A name that differs from another only in case is refused too.
 
 ### Manage profiles
 
@@ -186,11 +187,11 @@ A hidden variable stays visible when it has a value, with a warning in the banne
 
 The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.
 
-**Profiles (main page).** Your profiles and where each one is applied.
+**Profiles (main page).** Your profiles. The right arrow opens one.
 
 ![Profile list](docs/screenshots/home.svg)
 
-**One profile.** Enter opens a profile and shows its variables. You can edit them.
+**One profile.** The variables of a profile. The left arrow goes back.
 
 ![Variables of one profile](docs/screenshots/profile.svg)
 
@@ -202,11 +203,11 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 ![Apply dialog with the changes](docs/screenshots/apply.svg)
 
-**New profile.** `n` starts from a template, from a folder, or from a copy.
+**New profile.** `n` asks for a name and opens the empty profile.
 
-![New profile menu](docs/screenshots/new.svg)
+![New profile box](docs/screenshots/new.svg)
 
-**Edit.** `e` on a variable. Paste with `Ctrl+Shift+V`. An empty value removes the variable.
+**Edit.** `e` on a variable. Paste with `Ctrl+Shift+V`. In the box of a key, `Ctrl+R` shows or hides the key. An empty value removes the variable.
 
 ![Edit dialog for one variable](docs/screenshots/edit.svg)
 

@@ -11,25 +11,23 @@ from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
+from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.apply import ApplyPlan, Mode, format_plan, plan_apply, secret_target_problem
-from claude_code_env_editor.auth import describe, visible_rows
+from claude_code_env_editor.auth import visible_rows
 from claude_code_env_editor.destinations import (
     Destination,
     DestinationKind,
     DestinationState,
-    applied_in,
     destination_state,
-    known_variables,
     login_destinations,
     project_destination,
     short_path,
 )
 from claude_code_env_editor.envvars import (
-    BY_NAME,
     CHOICE,
     SOURCE_ENV,
     SOURCE_UNSET,
@@ -45,8 +43,7 @@ from claude_code_env_editor.profiles import (
     load_profiles,
     rename_profile,
     save_profile,
-    snapshot,
-    templates,
+    similar_name,
 )
 from claude_code_env_editor.sources import ProfileSource
 from claude_code_env_editor.target import Target
@@ -67,13 +64,31 @@ SECRET_NAMES: Final[tuple[str, ...]] = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_K
 PROJECT_FOLDER: Final[str] = "__project__"
 
 
+class PageTable(DataTable[Text]):
+    """A table whose right and left arrow keys move between pages: right goes forward, left goes back."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(key="right", action="forward", show=False),
+        Binding(key="left", action="back", show=False),
+    ]
+
+    class Forward(Message):
+        """The user pressed the right arrow."""
+
+    class Back(Message):
+        """The user pressed the left arrow."""
+
+    def action_forward(self) -> None:
+        """Tell the page that the user wants to go forward."""
+        self.post_message(self.Forward())
+
+    def action_back(self) -> None:
+        """Tell the page that the user wants to go back."""
+        self.post_message(self.Back())
+
+
 class BasePage(Screen[None]):
     """What both main pages share: the banner, the table, the status line, and the flows for profiles."""
-
-    def __init__(self) -> None:
-        """Secrets start hidden."""
-        super().__init__()
-        self.reveal: bool = False
 
     # -- to be filled in by a page -----------------------------------------
 
@@ -113,7 +128,7 @@ class BasePage(Screen[None]):
         """Build the banner, the table, the status line, and the footer."""
         yield Static(id="banner")
         with Vertical(id="table-box"):
-            yield DataTable(cursor_type="row", zebra_stripes=False)
+            yield PageTable(cursor_type="row", zebra_stripes=False)
         yield Static(id="status")
         yield Footer()
 
@@ -248,7 +263,7 @@ class BasePage(Screen[None]):
         if not plan.writes:
             self.set_status(message=f"Nothing to change: {destination.label} already matches '{profile.name}'.")
             return
-        lines: list[str] = format_plan(plan=plan, reveal=self.reveal, wrap=True)
+        lines: list[str] = format_plan(plan=plan, wrap=True)
         lines += [f"warning: {warning}" for warning in plan.warnings]
         if any(c.action == "remove" and c.name in SECRET_NAMES for c in plan.changes):
             lines.append("note: the key is removed because the endpoint changes. Set a new one in the profile.")
@@ -278,68 +293,6 @@ class BasePage(Screen[None]):
         )
 
     # -- save, delete ------------------------------------------------------
-
-    def save_values_as_profile(self, env: Mapping[str, str], source_name: str, suggested: str = "") -> None:
-        """Ask for a name, then for the key question, then save the known values of env as a profile."""
-        try:
-            existing: set[str] = set(load_profiles())
-        except ProfileError as exc:
-            self.set_status(message=str(exc), error=True)
-            return
-        known: dict[str, str] = {k: v for k, v in env.items() if k in BY_NAME}
-        if not known:
-            self.set_status(message="There are no known variables to save.", error=True)
-            return
-
-        def check_name(text: str) -> str | None:
-            """Return a message when the name is not usable."""
-            if not NAME_PATTERN.match(text):
-                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in existing:
-                return f"A profile named '{text}' exists. Use another name, or delete it first."
-            return None
-
-        def got_name(name: str | None) -> None:
-            """Continue with the key question when the values hold a key."""
-            if not name:
-                return
-            if not any(BY_NAME[k].secret for k in known):
-                self.save_snapshot(name=name, env=env, include_keys=True)
-                return
-
-            def got_key_answer(include: bool | None) -> None:
-                """Save the profile with or without the key."""
-                self.save_snapshot(name=name, env=env, include_keys=bool(include))
-
-            self.app.push_screen(
-                screen=ConfirmScreen(
-                    title=f"Include the key in profile '{name}'?",
-                    question="yes: one command switches endpoint and key together.\n"
-                    "no: the profile holds no key. You set the key after each apply.",
-                    hint="profiles.toml is a second plaintext copy of the key (mode 0600). Do not share it.",
-                ),
-                callback=got_key_answer,
-            )
-
-        self.app.push_screen(
-            screen=InputScreen(
-                title="Save as a profile",
-                prompt=f"Name for the profile (from {source_name})",
-                check=check_name,
-                placeholder=suggested or "work-deepseek",
-            ),
-            callback=got_name,
-        )
-
-    def save_snapshot(self, name: str, env: Mapping[str, str], include_keys: bool) -> None:
-        """Write the profile and say so."""
-        try:
-            path: Path = save_profile(profile=snapshot(name=name, env=env, include_keys=include_keys))
-        except (ProfileError, ValueError) as exc:
-            self.set_status(message=str(exc), error=True)
-            return
-        self.refresh_page()
-        self.set_status(message=f"Saved profile '{name}' in {path}.")
 
     def start_delete(self, name: str) -> None:
         """Ask, then delete a profile."""
@@ -439,19 +392,19 @@ class ProfileListPage(BasePage):
 
     def columns(self) -> tuple[str, ...]:
         """Return the column titles."""
-        return ("Profile", "Endpoint", "Key", "Applied in", "Note")
+        return ("Profile", "Endpoint", "Key")
 
     def start_message(self) -> str:
         """Return the first status text."""
-        return "Enter opens a profile. a applies it to a login or a project folder. n makes a new one. ? for help."
+        return "Right arrow opens a profile. a applies it. n makes a new one. ? for help."
 
     def help_keys(self) -> list[tuple[str, str]]:
         """Return the keys of this page."""
         return [
-            ("enter", "Open the profile and see its variables"),
+            ("right / enter", "Open the profile and see its variables"),
             ("a", "Apply the profile to a place you choose (replace mode)"),
             ("m", "Apply the profile in merge mode"),
-            ("n", "New profile: from a template, from a folder, or a copy"),
+            ("n", "New profile from scratch"),
             ("r", "Rename the profile"),
             ("x", "Delete the profile"),
             ("v", "Verify the endpoint, the key, and the model of the profile"),
@@ -480,9 +433,6 @@ class ProfileListPage(BasePage):
             self.profiles = {}
             self.set_status(message=str(exc), error=True)
         self.names = list(self.profiles)
-        where: dict[str, list[Destination]] = applied_in(
-            profiles=self.profiles, destinations=self.known_destinations()
-        )
         table: DataTable[Text] = self.query_one(selector=DataTable)
         table.clear()
         for profile in self.profiles.values():
@@ -490,17 +440,18 @@ class ProfileListPage(BasePage):
                 Text(text=profile.name, style="bold"),
                 Text(text=profile.host),
                 Text(text="key" if profile.has_key else "no key", style="" if profile.has_key else "dim"),
-                Text(text=", ".join(d.label for d in where.get(profile.name, [])) or "-", style="#7fb069"),
-                Text(text=profile.note, style="dim"),
                 key=profile.name,
             )
         if keep and keep in self.names:
             table.move_cursor(row=self.names.index(keep))
-        count: int = len(self.profiles)
-        self.draw_banner(lines=[("profiles", f"{count} profile{'' if count == 1 else 's'}")])
+        self.draw_banner(lines=[("profiles", str(len(self.profiles)))])
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Open the profile when Enter is pressed on a row."""
+        self.action_open()
+
+    def on_page_table_forward(self, event: PageTable.Forward) -> None:
+        """Open the profile when the right arrow is pressed."""
         self.action_open()
 
     def action_open(self) -> None:
@@ -523,61 +474,42 @@ class ProfileListPage(BasePage):
             self.begin_apply(name=name, mode="merge")
 
     def action_new(self) -> None:
-        """Start a new profile from a template, from a folder, or as a copy of a profile."""
-        options: list[tuple[str, str]] = [
-            ("template", "From a template"),
-            ("folder", "Import the values of a folder"),
-            ("copy", "Copy a profile"),
-        ]
+        """Ask for a name, create an empty profile, and open it so that its variables can be set."""
+        existing: set[str] = set(self.profiles)
 
-        def chosen(choice: str | None) -> None:
-            """Go on with the chosen source."""
-            if choice == "template":
-                self.new_from_template()
-            elif choice == "folder":
-                self.pick_destination(title="Import from which place?", on_chosen=self.new_from_destination)
-            elif choice == "copy":
-                self.new_from_copy()
+        def check_name(text: str) -> str | None:
+            """Return a message when the name is not usable."""
+            if not NAME_PATTERN.match(text):
+                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
+            if text in existing or similar_name(name=text, names=existing) is not None:
+                return f"A profile named '{text}' exists. Use another name."
+            return None
 
-        self.app.push_screen(screen=PickScreen(title="New profile", options=options), callback=chosen)
+        def create(name: str | None) -> None:
+            """Save the empty profile and open its variables."""
+            if not name:
+                return
+            profile: Profile = Profile(name=name, variables={})
+            try:
+                save_profile(profile=profile)
+            except (ProfileError, ValueError) as exc:
+                self.set_status(message=str(exc), error=True)
+                return
+            self.refresh_page()
+            table: PageTable = self.query_one(selector=PageTable)
+            if name in self.names:
+                table.move_cursor(row=self.names.index(name))
+            self.app.push_screen(VariablesPage(profile=profile, fresh=True))
 
-    def new_from_template(self) -> None:
-        """Pick a template, then name the new profile."""
-        available: dict[str, Profile] = templates()
-        options: list[tuple[str, str]] = [(name, f"{name:<14} {p.note}") for name, p in available.items()]
-
-        def chosen(name: str | None) -> None:
-            """Ask for the name of the new profile."""
-            if name is not None:
-                self.save_values_as_profile(
-                    env=available[name].variables, source_name=f"template {name}", suggested=name
-                )
-
-        self.app.push_screen(screen=PickScreen(title="Which template?", options=options), callback=chosen)
-
-    def new_from_copy(self) -> None:
-        """Pick one of your profiles, then name the copy."""
-        options: list[tuple[str, str]] = [(name, f"{name:<20} {p.host}") for name, p in self.profiles.items()]
-
-        def chosen(name: str | None) -> None:
-            """Ask for the name of the copy."""
-            if name is not None:
-                self.save_values_as_profile(
-                    env=self.profiles[name].variables, source_name=f"profile {name}", suggested=f"{name}-copy"
-                )
-
-        self.app.push_screen(screen=PickScreen(title="Copy which profile?", options=options), callback=chosen)
-
-    def new_from_destination(self, place: Destination) -> None:
-        """Import the known values of a place as a new profile."""
-        values: dict[str, str] | None = known_variables(destination=place)
-        if values is None:
-            self.set_status(message=f"{place.label} cannot be read.", error=True)
-            return
-        if not values:
-            self.set_status(message=f"{place.label} has no known variables to import.", error=True)
-            return
-        self.save_values_as_profile(env=values, source_name=place.label)
+        self.app.push_screen(
+            screen=InputScreen(
+                title="New profile",
+                prompt="Name for the new profile",
+                check=check_name,
+                placeholder="work-deepseek",
+            ),
+            callback=create,
+        )
 
     def action_delete(self) -> None:
         """Delete the profile under the cursor."""
@@ -596,7 +528,8 @@ class ProfileListPage(BasePage):
             """Return a message when the new name is not usable."""
             if not NAME_PATTERN.match(text):
                 return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text != name and text in existing:
+            others: set[str] = existing - {name}
+            if text in others or similar_name(name=text, names=others) is not None:
                 return f"A profile named '{text}' exists. Use another name."
             return None
 
@@ -632,7 +565,6 @@ class VariablesPage(BasePage):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="e", action="edit", description="edit"),
         Binding(key="x", action="remove", description="remove"),
-        Binding(key="r", action="reveal", description="reveal"),
         Binding(key="a", action="apply", description="apply"),
         Binding(key="m", action="merge", description="merge"),
         Binding(key="c", action="copy", description="copy"),
@@ -642,31 +574,34 @@ class VariablesPage(BasePage):
         Binding(key="q", action="app.quit", description="quit"),
     ]
 
-    def __init__(self, profile: Profile) -> None:
-        """Keep the profile that the page shows."""
+    def __init__(self, profile: Profile, fresh: bool = False) -> None:
+        """Keep the profile that the page shows. fresh is True for a profile that was just created."""
         super().__init__()
+        self.fresh: bool = fresh
         self.source: ProfileSource = ProfileSource(profile=profile)
         self.rows: list[Row] = []
 
     def columns(self) -> tuple[str, ...]:
         """Return the column titles."""
-        return ("Variable", "Value", "Source")
+        return ("Variable", "Value")
 
     def start_message(self) -> str:
         """Return the first status text."""
-        return "Press e to edit. Paste with Ctrl+Shift+V. Press a to apply. ? for help."
+        if self.fresh:
+            return "New profile. Press e to set a value. Left arrow goes back. ? for help."
+        return "Press e to edit. Paste with Ctrl+Shift+V. Left arrow goes back. ? for help."
 
     def help_keys(self) -> list[tuple[str, str]]:
         """Return the keys of this page."""
         return [
             ("e / enter", "Edit the selected variable"),
             ("ctrl+shift+v", "Paste in a value box. A terminal does not use Ctrl+V"),
+            ("ctrl+r", "In the edit box of a key: show or hide the key"),
+            ("left / esc", "Back to the profile list"),
             ("x", "Remove the selected variable (asks first)"),
-            ("r", "Reveal or hide secret values"),
             ("a / m", "Apply this profile to a place you choose (replace or merge)"),
             ("c", "Copy this profile under a new name"),
             ("v", "Verify the endpoint, the key, and the model"),
-            ("esc", "Back to the profile list"),
             ("?", "Help"),
             ("q", "Quit"),
         ]
@@ -689,41 +624,28 @@ class VariablesPage(BasePage):
         table: DataTable[Text] = self.query_one(selector=DataTable)
         table.clear()
         for row in self.rows:
-            value: str = row.value if self.reveal else row.display
+            value: str = row.display
             table.add_row(
                 Text(text=row.name, style="bold" if row.source != SOURCE_UNSET else "dim"),
                 Text(text=value or "-", style="dim" if row.source == SOURCE_UNSET else ""),
-                Text(
-                    text="profile" if row.source != SOURCE_UNSET else "unset",
-                    style="#d97757" if row.source != SOURCE_UNSET else "dim",
-                ),
                 key=row.name,
             )
         names: list[str] = [r.name for r in self.rows]
         if keep is not None and keep.name in names:
             table.move_cursor(row=names.index(keep.name))
-        values: dict[str, str] = {r.name: r.value for r in self.rows if r.value}
-        self.draw_banner(
-            lines=[
-                ("profile", self.source.name),
-                ("endpoint", Endpoint.from_values(values=values).host),
-                ("auth", describe(rows=self.rows)),
-            ]
-        )
+        self.draw_banner(lines=[("profile", self.source.name)])
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Edit the variable when Enter is pressed on a row."""
         self.action_edit()
 
+    def on_page_table_back(self, event: PageTable.Back) -> None:
+        """Go back to the profile list when the left arrow is pressed."""
+        self.action_back()
+
     def action_back(self) -> None:
         """Go back to the profile list."""
         self.app.pop_screen()
-
-    def action_reveal(self) -> None:
-        """Toggle between masked and full secret values."""
-        self.reveal = not self.reveal
-        self.refresh_page()
-        self.set_status(message="Secrets are visible." if self.reveal else "Secrets are hidden.")
 
     def save_values(self, updates: Mapping[str, str | None], done_message: str, name: str) -> None:
         """Save updates to the profile, show the result, and keep the cursor on the variable."""
@@ -776,7 +698,7 @@ class VariablesPage(BasePage):
         row: Row | None = self.selected()
         if row is None or row.source in (SOURCE_UNSET, SOURCE_ENV):
             return
-        shown: str = row.value if self.reveal else row.display
+        shown: str = row.display
         question: str = f"Remove {row.name} (value: {shown or '-'}) from profile '{self.source.name}'?"
 
         def remove_when_confirmed(confirmed: bool | None) -> None:
@@ -812,7 +734,7 @@ class VariablesPage(BasePage):
             """Return a message when the name is not usable."""
             if not NAME_PATTERN.match(text):
                 return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in existing:
+            if text in existing or similar_name(name=text, names=existing) is not None:
                 return f"A profile named '{text}' exists. Use another name."
             return None
 

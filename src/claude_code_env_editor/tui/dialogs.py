@@ -22,7 +22,10 @@ PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a ter
 
 class EditScreen(ModalScreen[str | None]):
     """Dialog to type a new value for one variable."""
-    BINDINGS: ClassVar[list[BindingType]] = [Binding(key="escape", action="cancel", description="Cancel")]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(key="escape", action="cancel", description="Cancel"),
+        Binding(key="ctrl+r", action="reveal", description="Show or hide the key", show=False),
+    ]
 
     def __init__(self, row: Row) -> None:
         """Keep the row to edit."""
@@ -43,6 +46,8 @@ class EditScreen(ModalScreen[str | None]):
             )
             yield Static("", id="error", classes="fail")
             yield Static(PASTE_HINT, id="paste-hint", classes="hint")
+            if self.row.secret:
+                yield Static("Ctrl+R shows or hides the key.", id="reveal-hint", classes="hint")
             yield Static("enter save  -  esc cancel  -  empty value removes the key", classes="hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -52,6 +57,13 @@ class EditScreen(ModalScreen[str | None]):
             self.query_one(selector="#error", expect_type=Static).update(err)
             return
         self.dismiss(result=value)
+
+    def action_reveal(self) -> None:
+        """Show or hide the characters of a secret. A value that is not secret has nothing to hide."""
+        if not self.row.secret:
+            return
+        box: Input = self.query_one(selector="#value", expect_type=Input)
+        box.password = not box.password
 
     def action_cancel(self) -> None:
         """Close the dialog without a change."""

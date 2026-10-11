@@ -5,6 +5,7 @@ from typing import cast
 
 import pytest
 from rich.text import Text
+from textual.binding import Binding
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, OptionList, Static
 
@@ -102,15 +103,6 @@ async def choose(app: EnvEditorApp, pilot: Pilot[None], option_id: str) -> None:
     await pilot.pause()
 
 
-async def choose_label(app: EnvEditorApp, pilot: Pilot[None], prefix: str) -> None:
-    """Choose the option whose text starts with prefix."""
-    labels: list[str] = labels_of(app)
-    index: int = next(i for i, text in enumerate(labels) if text.startswith(prefix))
-    option_list: OptionList = app.screen.query_one(selector=OptionList)
-    option_list.highlighted = index
-    await pilot.pause()
-    await pilot.press("enter")
-    await pilot.pause()
 
 
 # -- the main page: profiles -------------------------------------------------
@@ -166,16 +158,29 @@ async def test_command_palette_and_theme_picker_are_disabled(tmp_path: Path, pro
         assert "command_palette" not in {binding.action for _, binding in app._bindings}
 
 
-async def test_applied_in_names_the_logins_whose_file_matches(
-    tmp_path: Path, profiles_file: Path, isolated_home: Path
-) -> None:
-    make_login(isolated_home, ".claude-work", templates()["deepseek"].variables)
-    make_login(isolated_home, ".acme-login", {"ANTHROPIC_MODEL": "something-else"})
-    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
+
+
+async def test_main_page_has_only_name_endpoint_and_key_columns(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert "~/.claude-work" in cell(app, "deepseek", 3)
-        assert cell(app, "openrouter", 3) == "-"
+        table: DataTable[Text] = app.screen.query_one(selector=DataTable)
+        titles: list[str] = [str(column.label) for column in table.columns.values()]
+        assert titles == ["Profile", "Endpoint", "Key"]
+
+
+async def test_right_arrow_opens_the_profile_and_left_arrow_goes_back(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "openrouter")
+        await pilot.press("right")
+        await pilot.pause()
+        assert isinstance(app.screen, VariablesPage) and app.screen.source.name == "openrouter"
+        await pilot.press("left")
+        await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage)
+        assert app.screen.selected_name() == "openrouter"  # the cursor stays on the profile
 
 
 # -- one profile -------------------------------------------------------------
@@ -189,7 +194,8 @@ async def test_enter_opens_a_profile_and_esc_goes_back(tmp_path: Path, profiles_
         values: dict[str, str] = {r.name: r.value for r in page.rows}
         assert values["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
         banner: str = text_of(app, "#banner")
-        assert "deepseek" in banner and "api.deepseek.com" in banner and "settings.json" not in banner
+        assert "deepseek" in banner and "settings.json" not in banner
+        assert "endpoint" not in banner and "auth" not in banner
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, ProfileListPage)
@@ -254,20 +260,6 @@ async def test_removing_a_variable_asks_first(tmp_path: Path, profiles_file: Pat
     assert "API_TIMEOUT_MS" not in load_profiles(path=profiles_file)["mine"].variables
 
 
-async def test_secret_is_masked_until_reveal(tmp_path: Path, profiles_file: Path) -> None:
-    save_profile(
-        profile=Profile(name="keyed", variables={"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}), path=profiles_file
-    )
-    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await open_profile(app, pilot, "keyed")
-        shown: list[str] = [str(c) for c in app.screen.query_one(selector=DataTable).get_row(row_key="ANTHROPIC_AUTH_TOKEN")]
-        assert not any("0123456789" in s for s in shown)
-        await pilot.press("r")
-        await pilot.pause()
-        shown = [str(c) for c in app.screen.query_one(selector=DataTable).get_row(row_key="ANTHROPIC_AUTH_TOKEN")]
-        assert any("sk-0123456789abcdef" in s for s in shown)
 
 
 async def test_choice_variable_opens_a_list_and_saves_the_choice(tmp_path: Path, profiles_file: Path) -> None:
@@ -608,135 +600,180 @@ async def test_rename_refuses_an_existing_or_invalid_name(tmp_path: Path, profil
 # -- new profiles ------------------------------------------------------------
 
 
-async def test_n_creates_a_profile_from_a_template(tmp_path: Path, profiles_file: Path) -> None:
-    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "template")
-        await choose(app, pilot, "ollama")
-        assert screen_name(app) == "InputScreen"
-        app.screen.query_one(selector=Input).value = "my-ollama"
-        await pilot.press("enter")
-        await pilot.pause()
-        assert isinstance(app.screen, ProfileListPage) and "my-ollama" in app.screen.names
-    assert load_profiles(path=profiles_file)["my-ollama"].variables == templates()["ollama"].variables
 
 
-async def test_n_imports_the_values_of_a_login_folder_with_its_key(
-    tmp_path: Path, profiles_file: Path, isolated_home: Path
-) -> None:
-    values: dict[str, str] = {
-        "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
-        "ANTHROPIC_AUTH_TOKEN": "sk-123456789012",
-    }
-    make_login(isolated_home, ".claude-work", values)
-    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "folder")
-        await choose_label(app, pilot, "~/.claude-work")
-        assert screen_name(app) == "InputScreen"
-        app.screen.query_one(selector=Input).value = "imported"
-        await pilot.press("enter")
-        await pilot.pause()
-        assert screen_name(app) == "ConfirmScreen"  # the key question
-        await pilot.press("y")
-        await pilot.pause()
-    assert load_profiles(path=profiles_file)["imported"].variables == values
 
 
-async def test_n_can_leave_the_key_out(tmp_path: Path, profiles_file: Path, isolated_home: Path) -> None:
-    make_login(
-        isolated_home,
-        ".claude-work",
-        {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-123456789012"},
-    )
-    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "folder")
-        await choose_label(app, pilot, "~/.claude-work")
-        app.screen.query_one(selector=Input).value = "nokey"
-        await pilot.press("enter")
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-    assert not load_profiles(path=profiles_file)["nokey"].has_key
 
 
-async def test_n_imports_the_local_settings_of_a_project_folder(
-    tmp_path: Path, profiles_file: Path, isolated_home: Path
-) -> None:
-    project: Path = tmp_path / "app"
-    (project / ".claude").mkdir(parents=True)
-    (project / ".claude" / "settings.local.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "project-model"}}))
-    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "folder")
-        await choose(app, pilot, "__project__")
-        app.screen.query_one(selector=Input).value = str(project)
-        await pilot.press("enter")
-        await pilot.pause()
-        app.screen.query_one(selector=Input).value = "from-project"
-        await pilot.press("enter")
-        await pilot.pause()
-    assert load_profiles(path=profiles_file)["from-project"].variables == {"ANTHROPIC_MODEL": "project-model"}
 
 
-async def test_n_refuses_a_folder_without_known_variables(
-    tmp_path: Path, profiles_file: Path, isolated_home: Path
-) -> None:
-    make_login(isolated_home, ".empty", {"MY_OWN": "1"})
-    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "folder")
-        await choose_label(app, pilot, "~/.empty")
-        assert isinstance(app.screen, ProfileListPage)
-        assert "no known variables" in text_of(app, "#status")
 
 
-async def test_n_copies_a_profile(tmp_path: Path, profiles_file: Path) -> None:
-    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "copy")
-        await choose(app, pilot, "deepseek")
-        app.screen.query_one(selector=Input).value = "ds-two"
-        await pilot.press("enter")
-        await pilot.pause()
-    saved: dict[str, Profile] = load_profiles(path=profiles_file)
-    assert saved["ds-two"].variables == saved["deepseek"].variables
 
 
-async def test_a_name_that_exists_is_refused_when_saving(tmp_path: Path, profiles_file: Path) -> None:
-    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        await pilot.press("n")
-        await pilot.pause()
-        await choose(app, pilot, "template")
-        await choose(app, pilot, "ollama")
-        for bad in ("deepseek", "has space"):
-            app.screen.query_one(selector=Input).value = bad
-            await pilot.press("enter")
-            await pilot.pause()
-            assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""
 
 
 def test_tui_command_accepts_a_file_option() -> None:
     args = cli.build_parser().parse_args(["tui", "--file", "x.json"])
     assert args.file == Path("x.json")
+
+
+async def test_variables_page_has_only_variable_and_value_columns(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "deepseek")
+        table: DataTable[Text] = app.screen.query_one(selector=DataTable)
+        assert [str(column.label) for column in table.columns.values()] == ["Variable", "Value"]
+
+
+# -- reveal lives in the edit box of a key ------------------------------------
+
+
+async def test_a_secret_is_always_masked_in_the_table_and_has_no_reveal_key(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(
+        profile=Profile(name="keyed", variables={"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}), path=profiles_file
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "keyed")
+        row: list[str] = [str(c) for c in app.screen.query_one(selector=DataTable).get_row(row_key="ANTHROPIC_AUTH_TOKEN")]
+        assert not any("0123456789" in cell_text for cell_text in row)
+        await pilot.press("r")  # r is not a key of this page any more
+        await pilot.pause()
+        row = [str(c) for c in app.screen.query_one(selector=DataTable).get_row(row_key="ANTHROPIC_AUTH_TOKEN")]
+        assert not any("0123456789" in cell_text for cell_text in row)
+        keys: set[str] = {binding.key for binding in app.screen.BINDINGS if isinstance(binding, Binding)}
+        assert "r" not in keys
+
+
+async def test_the_edit_box_of_a_key_shows_and_hides_the_key_with_ctrl_r(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(
+        profile=Profile(name="keyed", variables={"ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef"}), path=profiles_file
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "keyed")
+        await move_to_variable(app, pilot, "ANTHROPIC_AUTH_TOKEN")
+        await pilot.press("e")
+        await pilot.pause()
+        box: Input = app.screen.query_one(selector=Input)
+        assert box.password is True
+        assert "Ctrl+R" in text_of(app, "#reveal-hint")
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert box.password is False and box.value == "sk-0123456789abcdef"
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert box.password is True
+
+
+async def test_the_edit_box_of_a_plain_variable_has_no_reveal_hint(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "deepseek")
+        await move_to_variable(app, pilot, "ANTHROPIC_MODEL")
+        await pilot.press("e")
+        await pilot.pause()
+        assert not app.screen.query("#reveal-hint")
+        box: Input = app.screen.query_one(selector=Input)
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert box.password is False  # nothing changed
+
+
+async def test_the_api_key_variable_has_the_reveal_control_too(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(
+        profile=Profile(
+            name="keyed",
+            variables={"ANTHROPIC_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_API_KEY": "sk-ant-0123456789"},
+        ),
+        path=profiles_file,
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "keyed")
+        await move_to_variable(app, pilot, "ANTHROPIC_API_KEY")
+        await pilot.press("e")
+        await pilot.pause()
+        assert "Ctrl+R" in text_of(app, "#reveal-hint")
+
+
+# -- new profile from scratch -------------------------------------------------
+
+
+async def test_n_creates_an_empty_profile_and_opens_it(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        assert screen_name(app) == "InputScreen"  # one question: the name
+        app.screen.query_one(selector=Input).value = "scratch"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, VariablesPage) and app.screen.source.name == "scratch"
+        assert all(row.value == "" for row in app.screen.rows)
+        assert "New profile" in text_of(app, "#status")
+        await pilot.press("e")  # the cursor is on the first variable, so e edits it at once
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "https://api.deepseek.com/anthropic"
+        await pilot.press("enter")
+        await pilot.pause()
+    assert load_profiles(path=profiles_file)["scratch"].variables == {
+        "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic"
+    }
+
+
+async def test_n_refuses_a_name_that_exists_also_in_another_case(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        for bad in ("deepseek", "DeepSeek", "has space", ""):
+            app.screen.query_one(selector=Input).value = bad
+            await pilot.press("enter")
+            await pilot.pause()
+            assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""
+    assert [n for n in load_profiles(path=profiles_file) if n.casefold() == "deepseek"] == ["deepseek"]
+
+
+async def test_escape_in_the_new_profile_box_creates_nothing(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        before: list[str] = list(load_profiles(path=profiles_file))
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage)
+    assert list(load_profiles(path=profiles_file)) == before
+
+
+async def test_rename_and_copy_refuse_a_name_in_another_case(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "zai")
+        await pilot.press("r")
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "OpenRouter"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""
+        await pilot.press("escape")
+        await pilot.pause()
+        await open_profile(app, pilot, "zai")
+        await pilot.press("c")
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "MOONSHOT"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""

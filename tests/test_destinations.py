@@ -4,7 +4,6 @@ from pathlib import Path
 from claude_code_env_editor.destinations import (
     Destination,
     DestinationState,
-    applied_in,
     destination_state,
     login_destinations,
     project_destination,
@@ -81,17 +80,3 @@ def test_a_variable_that_the_profile_lacks_counts_as_a_difference(tmp_path: Path
     place: Destination = make_login(tmp_path, ".x", {"ANTHROPIC_MODEL": "m", "API_TIMEOUT_MS": "5"})
     state: DestinationState = destination_state(profile=profile, destination=place)
     assert state.kind == "differs" and state.differing == ["API_TIMEOUT_MS"]
-
-
-def test_applied_in_lists_the_matching_destinations_for_each_profile(tmp_path: Path) -> None:
-    a: Destination = make_login(tmp_path, ".a", DEEPSEEK)
-    b: Destination = make_login(tmp_path, ".b", DEEPSEEK)
-    c: Destination = make_login(tmp_path, ".c", {"ANTHROPIC_MODEL": "other"})
-    d: Destination = make_login(tmp_path, ".d", None)
-    profiles: dict[str, Profile] = {
-        "ds": Profile(name="ds", variables=DEEPSEEK),
-        "unused": Profile(name="unused", variables={"ANTHROPIC_MODEL": "never"}),
-    }
-    result: dict[str, list[Destination]] = applied_in(profiles=profiles, destinations=[a, b, c, d])
-    assert [x.label for x in result["ds"]] == ["~/.a", "~/.b"]
-    assert result["unused"] == []
