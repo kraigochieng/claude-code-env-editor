@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.14.0 (2026-10-11)
+
+### Features
+
+- **tui**: Apply a profile to a place you choose and drop the target state
+  ([`988e1d8`](https://github.com/kraigochieng/claude-code-env-editor/commit/988e1d823ac0327d204b3f4a381ca5134bf8bfc6))
+
+a and m list your login folders, with the state of the profile in each, and a project folder (its
+  .claude/settings.local.json). A dialog then lists every change. The pages no longer show a file or
+  a config directory, and the d, c, and s keys are gone. Verify tests the endpoint of the profile
+  under the cursor. --config-dir and --file only put a place first in the list. FileSource and
+  matching_profile are removed. README and screenshots follow the new flow.
+
+Closes #66
+
+
 ## v0.13.0 (2026-10-11)
 
 ### Features
