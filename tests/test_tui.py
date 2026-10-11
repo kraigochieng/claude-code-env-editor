@@ -130,7 +130,7 @@ async def test_the_old_target_keys_are_gone(tmp_path: Path, profiles_file: Path)
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
-        for key in ("d", "c", "s"):
+        for key in ("d", "s", "r"):  # the old keys: switch place, save from file, rename
             await pilot.press(key)
             await pilot.pause()
             assert isinstance(app.screen, ProfileListPage)
@@ -288,18 +288,18 @@ async def test_the_page_and_the_edit_dialog_tell_how_to_paste(tmp_path: Path, pr
         assert "Ctrl+Shift+V" in text_of(app, "#paste-hint")
 
 
-async def test_c_copies_a_profile_and_opens_the_copy(tmp_path: Path, profiles_file: Path) -> None:
+async def test_c_on_the_list_copies_a_profile_and_selects_the_copy(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
-        await open_profile(app, pilot, "deepseek")
+        await move_to_profile(app, pilot, "deepseek")
         await pilot.press("c")
         await pilot.pause()
         assert screen_name(app) == "InputScreen"
         app.screen.query_one(selector=Input).value = "deepseek-copy"
         await pilot.press("enter")
         await pilot.pause()
-        assert isinstance(app.screen, VariablesPage) and app.screen.source.name == "deepseek-copy"
+        assert isinstance(app.screen, ProfileListPage) and app.screen.selected_name() == "deepseek-copy"
     copied: Profile = load_profiles(path=profiles_file)["deepseek-copy"]
     assert copied.variables["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
 
@@ -307,7 +307,7 @@ async def test_c_copies_a_profile_and_opens_the_copy(tmp_path: Path, profiles_fi
 # -- verify ------------------------------------------------------------------
 
 
-async def test_verify_uses_the_endpoint_of_the_profile(
+async def test_verify_on_the_list_uses_the_endpoint_of_the_profile_under_the_cursor(
     tmp_path: Path, profiles_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[str] = []
@@ -320,14 +320,12 @@ async def test_verify_uses_the_endpoint_of_the_profile(
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
-        await move_to_profile(app, pilot, "openrouter")
-        await pilot.press("v")
-        await pilot.pause(0.5)
-        await pilot.press("escape")
-        await pilot.pause()
-        await open_profile(app, pilot, "deepseek")
-        await pilot.press("v")
-        await pilot.pause(0.5)
+        for name in ("openrouter", "deepseek"):
+            await move_to_profile(app, pilot, name)
+            await pilot.press("v")
+            await pilot.pause(0.5)
+            await pilot.press("escape")
+            await pilot.pause()
     assert seen == ["openrouter.ai", "api.deepseek.com"]
 
 
@@ -445,18 +443,22 @@ async def test_m_applies_in_merge_mode(tmp_path: Path, profiles_file: Path) -> N
     assert env["API_TIMEOUT_MS"] == "5000" and env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
 
 
-async def test_a_on_a_profile_page_applies_that_profile(tmp_path: Path, profiles_file: Path) -> None:
+async def test_the_profile_page_has_no_apply_merge_copy_or_verify_keys(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await open_profile(app, pilot, "openrouter")
-        await pilot.press("a")
+        keys: set[str] = {b.key for b in app.screen.BINDINGS if isinstance(b, Binding)}
+        assert keys == {"e", "x", "escape", "question_mark", "q"}
+        for key in ("a", "m", "c", "v"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert isinstance(app.screen, VariablesPage)  # no dialog opened
+        await pilot.press("question_mark")
         await pilot.pause()
-        await choose(app, pilot, "0")
-        assert screen_name(app) == "ConfirmScreen"
-        await pilot.press("y")
-        await pilot.pause()
-    assert read_env(tmp_path / "settings.json")["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
+        help_text: str = text_of(app, "#body")
+        assert "Apply" not in help_text and "apply" not in help_text and "Verify" not in help_text
+    assert not (tmp_path / "settings.json").exists()
 
 
 async def test_apply_to_a_project_folder_writes_the_local_settings_file_with_the_key(
@@ -564,14 +566,15 @@ async def test_x_deletes_any_profile_after_a_yes(tmp_path: Path, profiles_file: 
     assert "mine" not in load_profiles(path=profiles_file)
 
 
-async def test_r_renames_a_profile_and_keeps_the_cursor_on_it(tmp_path: Path, profiles_file: Path) -> None:
+async def test_e_edits_the_name_of_a_profile_and_keeps_the_cursor_on_it(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await move_to_profile(app, pilot, "deepseek")
-        await pilot.press("r")
+        await pilot.press("e")
         await pilot.pause()
         assert screen_name(app) == "InputScreen"
+        assert "Edit profile" in text_of(app, ".heading")
         app.screen.query_one(selector=Input).value = "work-ds"
         await pilot.press("enter")
         await pilot.pause()
@@ -586,7 +589,7 @@ async def test_rename_refuses_an_existing_or_invalid_name(tmp_path: Path, profil
     async with app.run_test() as pilot:
         await pilot.pause()
         await move_to_profile(app, pilot, "deepseek")
-        await pilot.press("r")
+        await pilot.press("e")
         await pilot.pause()
         for bad in ("openrouter", "has space"):
             app.screen.query_one(selector=Input).value = bad
@@ -757,12 +760,12 @@ async def test_escape_in_the_new_profile_box_creates_nothing(tmp_path: Path, pro
     assert list(load_profiles(path=profiles_file)) == before
 
 
-async def test_rename_and_copy_refuse_a_name_in_another_case(tmp_path: Path, profiles_file: Path) -> None:
+async def test_edit_and_copy_refuse_a_name_in_another_case(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await move_to_profile(app, pilot, "zai")
-        await pilot.press("r")
+        await pilot.press("e")
         await pilot.pause()
         app.screen.query_one(selector=Input).value = "OpenRouter"
         await pilot.press("enter")
@@ -770,10 +773,108 @@ async def test_rename_and_copy_refuse_a_name_in_another_case(tmp_path: Path, pro
         assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""
         await pilot.press("escape")
         await pilot.pause()
-        await open_profile(app, pilot, "zai")
         await pilot.press("c")
         await pilot.pause()
         app.screen.query_one(selector=Input).value = "MOONSHOT"
         await pilot.press("enter")
         await pilot.pause()
         assert screen_name(app) == "InputScreen" and text_of(app, "#error") != ""
+
+# -- key hints use the colour of the footer keys ------------------------------
+
+
+def test_hint_line_uses_the_footer_key_colour() -> None:
+    from claude_code_env_editor.tui.dialogs import hint_line, key_color, key_sentence
+
+    app: EnvEditorApp = EnvEditorApp(config_dir=Path("."))
+    color: str = key_color(app=app)
+    assert color.lower() == "#ffa62b"
+    line: Text = hint_line(app=app, items=[("enter", "save"), ("esc", "cancel")])
+    styled: dict[str, str] = {line.plain[s.start : s.end]: str(s.style) for s in line.spans}
+    assert styled["enter"] == f"bold {color}" and styled["esc"] == f"bold {color}"
+    sentence: Text = key_sentence(app=app, before="Paste with ", key="Ctrl+Shift+V", after=" now.")
+    assert [sentence.plain[s.start : s.end] for s in sentence.spans if str(s.style) == f"bold {color}"] == [
+        "Ctrl+Shift+V"
+    ]
+
+
+async def test_the_dialogs_show_their_keys_in_the_footer_colour(tmp_path: Path, profiles_file: Path) -> None:
+    from claude_code_env_editor.tui.dialogs import key_color
+
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        footer_color: str = str(app.get_css_variables()["footer-key-foreground"])
+        assert key_color(app=app) == footer_color
+        await pilot.press("n")
+        await pilot.pause()
+        hints: list[Static] = list(app.screen.query(".hint").results(Static))
+        assert hints, "the dialog has hint lines"
+        spans: list[str] = []
+        for hint in hints:
+            content: object = hint.content  # the Text that the dialog built
+            if isinstance(content, Text):
+                spans += [str(span.style) for span in content.spans]
+        assert f"bold {footer_color}" in spans
+
+
+# -- a click outside a dialog closes it ---------------------------------------
+
+
+async def test_a_click_outside_the_edit_box_closes_it_without_a_change(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(profile=Profile(name="mine", variables={"ANTHROPIC_MODEL": "m"}), path=profiles_file)
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profile(app, pilot, "mine")
+        await move_to_variable(app, pilot, "ANTHROPIC_MODEL")
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "changed"
+        await pilot.click(offset=(0, 0))
+        await pilot.pause()
+        assert isinstance(app.screen, VariablesPage)
+    assert load_profiles(path=profiles_file)["mine"].variables == {"ANTHROPIC_MODEL": "m"}
+
+
+async def test_a_click_inside_the_dialog_keeps_it_open(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.click(".heading")
+        await pilot.pause()
+        assert screen_name(app) == "InputScreen"
+
+
+async def test_a_click_outside_the_confirm_dialog_answers_no(tmp_path: Path, profiles_file: Path) -> None:
+    write_settings(tmp_path, {"API_TIMEOUT_MS": "5000"})
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "deepseek")
+        await pilot.press("a")
+        await pilot.pause()
+        await choose(app, pilot, "0")
+        assert screen_name(app) == "ConfirmScreen"
+        await pilot.click(offset=(0, 0))
+        await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage)
+    assert read_env(tmp_path / "settings.json") == {"API_TIMEOUT_MS": "5000"}
+
+
+async def test_a_click_outside_closes_the_pick_list_the_help_and_the_name_box(
+    tmp_path: Path, profiles_file: Path
+) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        for key, name in (("a", "PickScreen"), ("question_mark", "TextScreen"), ("e", "InputScreen")):
+            await move_to_profile(app, pilot, "deepseek")
+            await pilot.press(key)
+            await pilot.pause()
+            assert screen_name(app) == name
+            await pilot.click(offset=(0, 0))
+            await pilot.pause()
+            assert isinstance(app.screen, ProfileListPage)

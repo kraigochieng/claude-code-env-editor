@@ -76,10 +76,11 @@ The TUI has two pages. Neither page shows a file or a config directory. A folder
 | `right arrow` / `enter` | Open the profile and see its variables |
 | `a` | Apply the profile (replace mode). You choose the place, then review the changes |
 | `m` | Apply the profile in merge mode |
-| `n` | New profile from scratch: type a name, then set its variables |
-| `r` | Rename the profile |
-| `x` | Delete the profile (asks first) |
+| `c` | Copy the profile under a new name |
 | `v` | Verify the endpoint, the key, and the model of the profile |
+| `n` | New profile from scratch: type a name, then set its variables |
+| `e` | Edit the name of the profile |
+| `x` | Delete the profile (asks first) |
 | `?` / `q` | Help / quit |
 
 **Profile page.** The variables of one profile.
@@ -88,10 +89,10 @@ The TUI has two pages. Neither page shows a file or a config directory. A folder
 |---|---|
 | `e` / `enter` | Edit the selected variable. The change goes to `profiles.toml`. In the edit box of a key, `Ctrl+R` shows or hides the key |
 | `x` | Remove the variable (asks first) |
-| `a` / `m` | Apply the profile (replace or merge) |
-| `c` | Copy the profile under a new name, then edit the copy |
-| `v` | Verify the endpoint, the key, and the model |
 | `left arrow` / `esc` | Back to the profile list |
+
+Apply, merge, copy, and verify are keys of the profile list only. A click outside a dialog closes it, like `Esc`
+(a confirm dialog answers no, so nothing is written).
 
 ## Profiles
 
@@ -150,7 +151,7 @@ with a key is refused for a file that may be committed, and the status line says
 
 `n` makes a new empty profile from scratch. You type a name, and the tool opens the profile so that you can set its
 variables. To start from a template, to copy a profile, or to import the values of a folder, use the CLI:
-`profile save NAME --from TEMPLATE`, or `profile save NAME --config-dir DIR`. In the TUI, `c` on a profile page copies it.
+`profile save NAME --from TEMPLATE`, or `profile save NAME --config-dir DIR`. In the TUI, `c` on the profile list copies a profile.
 
 Profile names are unique. A name that differs from another only in case is refused too.
 

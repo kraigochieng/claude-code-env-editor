@@ -1,12 +1,17 @@
-"""Small dialogs of the interface: edit a value, ask yes or no, type a line, pick an item, show text."""
+"""Small dialogs of the interface: edit a value, ask yes or no, type a line, pick an item, show text.
+
+Every dialog closes when the user clicks outside it, with the same result as Esc.
+The keys in the hint lines use the colour of the keys in the footer.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import ClassVar, Final
+from collections.abc import Callable, Sequence
+from typing import Any, ClassVar, Final
 
 from rich.text import Text
-from textual.app import ComposeResult
+from textual import events
+from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
@@ -17,11 +22,67 @@ from textual.widgets.option_list import Option
 from claude_code_env_editor.envvars import Row, VarSpec, validate
 
 REMOVE_CHOICE: Final[str] = "__remove__"
-PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a terminal)."
+FOOTER_KEY_FALLBACK: Final[str] = "#FFA62B"
+DIALOG_CLASS: Final[str] = "dialog"
+
+
+def key_color(app: App[Any]) -> str:
+    """Return the colour that the footer uses for its keys, so that the dialogs match it."""
+    return str(app.get_css_variables().get("footer-key-foreground", FOOTER_KEY_FALLBACK))
+
+
+def hint_line(app: App[Any], items: Sequence[tuple[str, str]], tail: str = "") -> Text:
+    """Build a hint line like the footer: each key in the footer colour, then what it does.
+
+    Example: hint_line(app, [("enter", "save"), ("esc", "cancel")]).
+    """
+    color: str = key_color(app=app)
+    line: Text = Text()
+    for index, (key, meaning) in enumerate(items):
+        if index:
+            line.append("  ")
+        line.append(key, style=f"bold {color}")
+        line.append(f" {meaning}", style="dim")
+    if tail:
+        line.append(f"  {tail}", style="dim")
+    return line
+
+
+def key_sentence(app: App[Any], before: str, key: str, after: str) -> Text:
+    """Build a sentence with one key in the footer colour, for example 'Paste with Ctrl+Shift+V (...)'."""
+    line: Text = Text()
+    if before:
+        line.append(before, style="dim")
+    line.append(key, style=f"bold {key_color(app=app)}")
+    line.append(after, style="dim")
+    return line
+
+
+def paste_hint(app: App[Any]) -> Text:
+    """Return the line that tells how to paste in a terminal."""
+    return key_sentence(
+        app=app,
+        before="Paste with ",
+        key="Ctrl+Shift+V",
+        after=" (Ctrl+V does not work in a terminal).",
+    )
+
+
+def clicked_outside(screen: ModalScreen[Any], event: events.Click) -> bool:
+    """Return True when the click landed outside the dialog box of a modal screen."""
+    try:
+        widget, _ = screen.get_widget_at(event.screen_x, event.screen_y)
+    except Exception:  # no widget at that point: the click is outside
+        return True
+    dialogs: list[Any] = list(screen.query(f".{DIALOG_CLASS}"))
+    if not dialogs:
+        return False
+    return dialogs[0] not in widget.ancestors_with_self
 
 
 class EditScreen(ModalScreen[str | None]):
     """Dialog to type a new value for one variable."""
+
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="escape", action="cancel", description="Cancel"),
         Binding(key="ctrl+r", action="reveal", description="Show or hide the key", show=False),
@@ -33,9 +94,9 @@ class EditScreen(ModalScreen[str | None]):
         self.row = row
 
     def compose(self) -> ComposeResult:
-        """Build the dialog: name, help text, input, error line, hint."""
+        """Build the dialog: name, help text, input, error line, hints."""
         spec: VarSpec | None = self.row.spec
-        with Vertical(classes="dialog"):
+        with Vertical(classes=DIALOG_CLASS):
             yield Static(self.row.name, classes="heading")
             yield Static(spec.help if spec else "Custom variable.")
             yield Input(
@@ -45,10 +106,24 @@ class EditScreen(ModalScreen[str | None]):
                 id="value",
             )
             yield Static("", id="error", classes="fail")
-            yield Static(PASTE_HINT, id="paste-hint", classes="hint")
+            yield Static(paste_hint(app=self.app), id="paste-hint", classes="hint")
             if self.row.secret:
-                yield Static("Ctrl+R shows or hides the key.", id="reveal-hint", classes="hint")
-            yield Static("enter save  -  esc cancel  -  empty value removes the key", classes="hint")
+                yield Static(
+                    key_sentence(app=self.app, before="", key="Ctrl+R", after=" shows or hides the key."),
+                    id="reveal-hint",
+                    classes="hint",
+                )
+            yield Static(
+                hint_line(
+                    app=self.app, items=[("enter", "save"), ("esc", "cancel")], tail="An empty value removes it."
+                ),
+                classes="hint",
+            )
+
+    def on_click(self, event: events.Click) -> None:
+        """Close the dialog without a change when the click is outside the box."""
+        if clicked_outside(screen=self, event=event):
+            self.action_cancel()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Check the typed value. Close the dialog when it is good, else show the error."""
@@ -87,12 +162,21 @@ class ConfirmScreen(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         """Build the dialog: title, question, key hints."""
-        with Vertical(classes="dialog"):
+        with Vertical(classes=DIALOG_CLASS):
             yield Static(self.title_text, classes="heading")
             with VerticalScroll(id="question-box"):
                 yield Static(Text(self.question), id="question")
-            yield Static("y or enter: yes  -  n or esc: no", classes="hint")
-            yield Static(self.hint_text, classes="hint")
+            yield Static(
+                hint_line(app=self.app, items=[("y / enter", "yes"), ("n / esc", "no")]),
+                classes="hint",
+            )
+            if self.hint_text:
+                yield Static(Text(self.hint_text, style="dim"), classes="hint")
+
+    def on_click(self, event: events.Click) -> None:
+        """Answer no when the click is outside the box. Nothing is written."""
+        if clicked_outside(screen=self, event=event):
+            self.action_no()
 
     def action_yes(self) -> None:
         """Close the dialog with yes."""
@@ -118,13 +202,18 @@ class InputScreen(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         """Build the dialog: title, prompt, input, error line, hints."""
-        with Vertical(classes="dialog"):
+        with Vertical(classes=DIALOG_CLASS):
             yield Static(self.title_text, classes="heading")
             yield Static(Text(self.prompt))
             yield Input(placeholder=self.placeholder, id="line")
             yield Static("", id="error", classes="fail")
-            yield Static(PASTE_HINT, id="paste-hint", classes="hint")
-            yield Static("enter save  -  esc cancel", classes="hint")
+            yield Static(paste_hint(app=self.app), id="paste-hint", classes="hint")
+            yield Static(hint_line(app=self.app, items=[("enter", "save"), ("esc", "cancel")]), classes="hint")
+
+    def on_click(self, event: events.Click) -> None:
+        """Close the dialog without text when the click is outside the box."""
+        if clicked_outside(screen=self, event=event):
+            self.action_cancel()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Run the check. Close the dialog with the text when it is good, else show the message."""
@@ -142,6 +231,7 @@ class InputScreen(ModalScreen[str | None]):
 
 class PickScreen(ModalScreen[str | None]):
     """Dialog to choose one item from a list."""
+
     BINDINGS: ClassVar[list[BindingType]] = [Binding(key="escape", action="cancel", description="Cancel")]
 
     def __init__(self, title: str, options: list[tuple[str, str]]) -> None:
@@ -151,10 +241,15 @@ class PickScreen(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         """Build the dialog: title, option list, hint."""
-        with Vertical(classes="dialog"):
+        with Vertical(classes=DIALOG_CLASS):
             yield Static(self.title_text, classes="heading")
-            yield OptionList(*[Option(label, id=key) for key, label in self.options])
-            yield Static("enter choose  -  esc cancel", classes="hint")
+            yield OptionList(*[Option(Text(label), id=key) for key, label in self.options])
+            yield Static(hint_line(app=self.app, items=[("enter", "choose"), ("esc", "cancel")]), classes="hint")
+
+    def on_click(self, event: events.Click) -> None:
+        """Close the dialog without a choice when the click is outside the box."""
+        if clicked_outside(screen=self, event=event):
+            self.action_cancel()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         """Close the dialog and return the id of the chosen option."""
@@ -167,7 +262,11 @@ class PickScreen(ModalScreen[str | None]):
 
 class TextScreen(ModalScreen[None]):
     """Dialog that shows read-only text."""
-    BINDINGS: ClassVar[list[BindingType]] = [Binding(key="escape", action="close", description="Close"), Binding(key="enter", action="close", description="Close")]
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(key="escape", action="close", description="Close"),
+        Binding(key="enter", action="close", description="Close"),
+    ]
 
     def __init__(self, title: str, body: Text) -> None:
         """Keep the title and the text to show."""
@@ -176,10 +275,15 @@ class TextScreen(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Build the dialog: title, text, hint."""
-        with Vertical(classes="dialog"):
+        with Vertical(classes=DIALOG_CLASS):
             yield Static(self.title_text, classes="heading")
             yield Static(self.body, id="body")
-            yield Static("esc close", classes="hint")
+            yield Static(hint_line(app=self.app, items=[("esc / enter", "close")]), classes="hint")
+
+    def on_click(self, event: events.Click) -> None:
+        """Close the dialog when the click is outside the box."""
+        if clicked_outside(screen=self, event=event):
+            self.action_close()
 
     def action_close(self) -> None:
         """Close the dialog."""
