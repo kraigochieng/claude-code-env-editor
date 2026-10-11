@@ -54,6 +54,7 @@ from claude_code_env_editor.tui.dialogs import (
     InputScreen,
     PickScreen,
     TextScreen,
+    key_color,
 )
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
@@ -106,10 +107,6 @@ class BasePage(Screen[None]):
 
     def help_keys(self) -> list[tuple[str, str]]:
         """Return the (key, meaning) pairs for the help dialog."""
-        raise NotImplementedError
-
-    def current_values(self) -> dict[str, str]:
-        """Return the values that Verify tests: the values of the profile on the page or under the cursor."""
         raise NotImplementedError
 
     # -- shared structure --------------------------------------------------
@@ -319,55 +316,62 @@ class BasePage(Screen[None]):
             callback=delete_when_confirmed,
         )
 
-    # -- help and verify ---------------------------------------------------
+    # -- copy --------------------------------------------------------------
 
-    def action_help(self) -> None:
-        """Open the help dialog with the keys of this page."""
-        body: Text = Text()
-        for key, text in self.help_keys():
-            body.append(f"{key:<14}", style="bold #d97757")
-            body.append(f"{text}\n")
-        body.append("\nProfiles are stored in profiles.toml.\n", style="dim")
-        body.append("Apply writes the env block of the place that you choose.", style="dim")
-        self.app.push_screen(screen=TextScreen(title="Help", body=body))
-
-    def action_verify(self) -> None:
-        """Open the verify dialog and start the checks in a thread."""
-        endpoint: Endpoint = Endpoint.from_values(values=self.current_values())
-        screen: TextScreen = TextScreen(
-            title="Verify", body=Text(text=f"Sending requests to {endpoint.host} only...", style="dim")
-        )
-        self.app.push_screen(screen=screen)
-        login_found: bool = config.has_login(config_dir=self.preferred.config_dir)
-        self.run_verify(screen=screen, endpoint=endpoint, login_found=login_found)
-
-    @work(thread=True)
-    def run_verify(self, screen: TextScreen, endpoint: Endpoint, login_found: bool) -> None:
-        """Run the checks in a worker thread. Show the result in the dialog."""
-        checks: list[Check] = verify(endpoint=endpoint, login_found=login_found)
+    def start_copy(self, original: Profile, on_done: Callable[[Profile], None]) -> None:
+        """Ask for a name, save a copy of the profile under it, and pass the copy to on_done."""
         try:
-            self.app.call_from_thread(screen.update_body, self.render_checks(checks=checks, endpoint=endpoint))
-        except RuntimeError:  # the app has closed while the checks ran
+            existing: set[str] = set(load_profiles())
+        except ProfileError as exc:
+            self.set_status(message=str(exc), error=True)
             return
 
-    @staticmethod
-    def render_checks(checks: list[Check], endpoint: Endpoint) -> Text:
-        """Format the check results as text for the dialog."""
-        body: Text = Text(text=f"Host: {endpoint.host}\n\n", style="dim")
-        for c in checks:
-            mark, style = {PASS: ("ok  ", "#7fb069"), FAIL: ("FAIL", "#e5534b")}.get(c.status, ("skip", "dim"))
-            body.append(f"{mark}  ", style=style)
-            body.append(f"{c.name:<12}")
-            body.append(f"{c.detail}\n", style="dim")
-        failed: bool = any(c.status == FAIL for c in checks)
-        skipped: bool = any(c.status == SKIP for c in checks)
-        verdict: str = "All checks passed."
-        if failed:
-            verdict = "Some checks failed."
-        elif skipped:
-            verdict = "No check failed. Some checks were skipped."
-        body.append(f"\n{verdict}")
-        return body
+        def check_name(text: str) -> str | None:
+            """Return a message when the name is not usable."""
+            if not NAME_PATTERN.match(text):
+                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
+            if text in existing or similar_name(name=text, names=existing) is not None:
+                return f"A profile named '{text}' exists. Use another name."
+            return None
+
+        def copy_to(name: str | None) -> None:
+            """Save the copy."""
+            if not name:
+                return
+            copy: Profile = Profile(name=name, variables=dict(original.variables), note=original.note)
+            try:
+                save_profile(profile=copy)
+            except (ProfileError, ValueError) as exc:
+                self.set_status(message=str(exc), error=True)
+                return
+            on_done(copy)
+
+        self.app.push_screen(
+            screen=InputScreen(
+                title=f"Copy profile '{original.name}'",
+                prompt="Name for the copy",
+                check=check_name,
+                placeholder=f"{original.name}-copy",
+            ),
+            callback=copy_to,
+        )
+
+    # -- help ---------------------------------------------------------------
+
+    def help_notes(self) -> list[str]:
+        """Return the notes under the keys in the help dialog."""
+        return []
+
+    def action_help(self) -> None:
+        """Open the help dialog with the keys of this page. The keys use the colour of the footer keys."""
+        color: str = key_color(app=self.app)
+        body: Text = Text()
+        for key, text in self.help_keys():
+            body.append(f"{key:<14}", style=f"bold {color}")
+            body.append(f"{text}\n")
+        for note in self.help_notes():
+            body.append(f"\n{note}", style="dim")
+        self.app.push_screen(screen=TextScreen(title="Help", body=body))
 
 
 class ProfileListPage(BasePage):
@@ -376,10 +380,11 @@ class ProfileListPage(BasePage):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="a", action="apply", description="apply"),
         Binding(key="m", action="merge", description="merge"),
-        Binding(key="n", action="new", description="new"),
-        Binding(key="r", action="rename", description="rename"),
-        Binding(key="x", action="delete", description="delete"),
+        Binding(key="c", action="copy", description="copy"),
         Binding(key="v", action="verify", description="verify"),
+        Binding(key="n", action="new", description="new"),
+        Binding(key="e", action="edit", description="edit"),
+        Binding(key="x", action="delete", description="delete"),
         Binding(key="question_mark", action="help", description="help"),
         Binding(key="q", action="app.quit", description="quit"),
     ]
@@ -404,13 +409,18 @@ class ProfileListPage(BasePage):
             ("right / enter", "Open the profile and see its variables"),
             ("a", "Apply the profile to a place you choose (replace mode)"),
             ("m", "Apply the profile in merge mode"),
-            ("n", "New profile from scratch"),
-            ("r", "Rename the profile"),
-            ("x", "Delete the profile"),
+            ("c", "Copy the profile under a new name"),
             ("v", "Verify the endpoint, the key, and the model of the profile"),
+            ("n", "New profile from scratch"),
+            ("e", "Edit the name of the profile"),
+            ("x", "Delete the profile"),
             ("?", "Show this help"),
             ("q", "Quit"),
         ]
+
+    def help_notes(self) -> list[str]:
+        """Return the notes under the keys."""
+        return ["Profiles are stored in profiles.toml.", "Apply writes the env block of the place that you choose."]
 
     def current_values(self) -> dict[str, str]:
         """Return the variables of the profile under the cursor."""
@@ -517,8 +527,24 @@ class ProfileListPage(BasePage):
         if name is not None:
             self.start_delete(name=name)
 
-    def action_rename(self) -> None:
-        """Ask for a new name for the profile under the cursor."""
+    def action_copy(self) -> None:
+        """Copy the profile under the cursor and keep the cursor on the copy."""
+        name: str | None = self.selected_name()
+        if name is None:
+            return
+
+        def done(copy: Profile) -> None:
+            """Show the copy in the list."""
+            self.refresh_page()
+            table: DataTable[Text] = self.query_one(selector=DataTable)
+            if copy.name in self.names:
+                table.move_cursor(row=self.names.index(copy.name))
+            self.set_status(message=f"Copied '{name}' to '{copy.name}'.")
+
+        self.start_copy(original=self.profiles[name], on_done=done)
+
+    def action_edit(self) -> None:
+        """Edit the name of the profile under the cursor."""
         name: str | None = self.selected_name()
         if name is None:
             return
@@ -550,13 +576,54 @@ class ProfileListPage(BasePage):
 
         self.app.push_screen(
             screen=InputScreen(
-                title=f"Rename profile '{name}'",
-                prompt="New name",
+                title=f"Edit profile '{name}'",
+                prompt="Profile name",
                 check=check_name,
                 placeholder=name,
             ),
             callback=rename_to,
         )
+
+
+    # -- verify ------------------------------------------------------------
+
+    def action_verify(self) -> None:
+        """Open the verify dialog and start the checks in a thread."""
+        endpoint: Endpoint = Endpoint.from_values(values=self.current_values())
+        screen: TextScreen = TextScreen(
+            title="Verify", body=Text(text=f"Sending requests to {endpoint.host} only...", style="dim")
+        )
+        self.app.push_screen(screen=screen)
+        login_found: bool = config.has_login(config_dir=self.preferred.config_dir)
+        self.run_verify(screen=screen, endpoint=endpoint, login_found=login_found)
+
+    @work(thread=True)
+    def run_verify(self, screen: TextScreen, endpoint: Endpoint, login_found: bool) -> None:
+        """Run the checks in a worker thread. Show the result in the dialog."""
+        checks: list[Check] = verify(endpoint=endpoint, login_found=login_found)
+        try:
+            self.app.call_from_thread(screen.update_body, self.render_checks(checks=checks, endpoint=endpoint))
+        except RuntimeError:  # the app has closed while the checks ran
+            return
+
+    @staticmethod
+    def render_checks(checks: list[Check], endpoint: Endpoint) -> Text:
+        """Format the check results as text for the dialog."""
+        body: Text = Text(text=f"Host: {endpoint.host}\n\n", style="dim")
+        for c in checks:
+            mark, style = {PASS: ("ok  ", "#7fb069"), FAIL: ("FAIL", "#e5534b")}.get(c.status, ("skip", "dim"))
+            body.append(f"{mark}  ", style=style)
+            body.append(f"{c.name:<12}")
+            body.append(f"{c.detail}\n", style="dim")
+        failed: bool = any(c.status == FAIL for c in checks)
+        skipped: bool = any(c.status == SKIP for c in checks)
+        verdict: str = "All checks passed."
+        if failed:
+            verdict = "Some checks failed."
+        elif skipped:
+            verdict = "No check failed. Some checks were skipped."
+        body.append(f"\n{verdict}")
+        return body
 
 
 class VariablesPage(BasePage):
@@ -565,10 +632,6 @@ class VariablesPage(BasePage):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="e", action="edit", description="edit"),
         Binding(key="x", action="remove", description="remove"),
-        Binding(key="a", action="apply", description="apply"),
-        Binding(key="m", action="merge", description="merge"),
-        Binding(key="c", action="copy", description="copy"),
-        Binding(key="v", action="verify", description="verify"),
         Binding(key="escape", action="back", description="back"),
         Binding(key="question_mark", action="help", description="help"),
         Binding(key="q", action="app.quit", description="quit"),
@@ -591,6 +654,10 @@ class VariablesPage(BasePage):
             return "New profile. Press e to set a value. Left arrow goes back. ? for help."
         return "Press e to edit. Paste with Ctrl+Shift+V. Left arrow goes back. ? for help."
 
+    def help_notes(self) -> list[str]:
+        """Return the notes under the keys."""
+        return ["Changes are saved in profiles.toml."]
+
     def help_keys(self) -> list[tuple[str, str]]:
         """Return the keys of this page."""
         return [
@@ -599,16 +666,9 @@ class VariablesPage(BasePage):
             ("ctrl+r", "In the edit box of a key: show or hide the key"),
             ("left / esc", "Back to the profile list"),
             ("x", "Remove the selected variable (asks first)"),
-            ("a / m", "Apply this profile to a place you choose (replace or merge)"),
-            ("c", "Copy this profile under a new name"),
-            ("v", "Verify the endpoint, the key, and the model"),
             ("?", "Help"),
             ("q", "Quit"),
         ]
-
-    def current_values(self) -> dict[str, str]:
-        """Return the values on the page."""
-        return {r.name: r.value for r in self.rows if r.value}
 
     def selected(self) -> Row | None:
         """Return the row under the cursor, or None."""
@@ -711,53 +771,4 @@ class VariablesPage(BasePage):
         self.app.push_screen(
             screen=ConfirmScreen(title="Remove variable", question=question, hint=""),
             callback=remove_when_confirmed,
-        )
-
-    def action_apply(self) -> None:
-        """Apply this profile in replace mode."""
-        self.begin_apply(name=self.source.name, mode="replace")
-
-    def action_merge(self) -> None:
-        """Apply this profile in merge mode."""
-        self.begin_apply(name=self.source.name, mode="merge")
-
-    def action_copy(self) -> None:
-        """Copy this profile under a new name and open the copy."""
-        original: Profile = self.source.profile
-        try:
-            existing: set[str] = set(load_profiles())
-        except ProfileError as exc:
-            self.set_status(message=str(exc), error=True)
-            return
-
-        def check_name(text: str) -> str | None:
-            """Return a message when the name is not usable."""
-            if not NAME_PATTERN.match(text):
-                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in existing or similar_name(name=text, names=existing) is not None:
-                return f"A profile named '{text}' exists. Use another name."
-            return None
-
-        def copy_to(name: str | None) -> None:
-            """Save the copy and open it."""
-            if not name:
-                return
-            copy: Profile = Profile(name=name, variables=dict(original.variables), note=original.note)
-            try:
-                save_profile(profile=copy)
-            except (ProfileError, ValueError) as exc:
-                self.set_status(message=str(exc), error=True)
-                return
-            self.source = ProfileSource(profile=copy)
-            self.refresh_page()
-            self.set_status(message=f"Copied to '{name}'. You can edit it now.")
-
-        self.app.push_screen(
-            screen=InputScreen(
-                title=f"Copy profile '{original.name}'",
-                prompt="Name for the copy",
-                check=check_name,
-                placeholder=f"{original.name}-copy",
-            ),
-            callback=copy_to,
         )
