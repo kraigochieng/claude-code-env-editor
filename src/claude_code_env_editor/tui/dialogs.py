@@ -17,7 +17,6 @@ from textual.widgets.option_list import Option
 from claude_code_env_editor.envvars import Row, VarSpec, validate
 
 REMOVE_CHOICE: Final[str] = "__remove__"
-OTHER_FILE: Final[str] = "__file__"
 PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a terminal)."
 
 
