@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from claude_code_env_editor.profiles import (
-    NAME_PATTERN,
     Profile,
     ProfileError,
     delete_profile,
     load_profiles,
+    name_problem,
     save_profile,
-    similar_name,
 )
 from claude_code_env_editor.tui.dialogs import ConfirmScreen, InputScreen
 from claude_code_env_editor.tui.pages.apply_flow import ApplyFlowPage
@@ -59,11 +58,7 @@ class ProfileActionsPage(ApplyFlowPage):
 
         def check_name(text: str) -> str | None:
             """Return a message when the name is not usable."""
-            if not NAME_PATTERN.match(text):
-                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in existing or similar_name(name=text, names=existing) is not None:
-                return f"A profile named '{text}' exists. Use another name."
-            return None
+            return name_problem(name=text, taken=existing)
 
         def copy_to(name: str | None) -> None:
             """Save the copy."""

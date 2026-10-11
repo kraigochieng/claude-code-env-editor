@@ -179,6 +179,20 @@ def similar_name(name: str, names: Iterable[str]) -> str | None:
     return None
 
 
+def name_problem(name: str, taken: Iterable[str]) -> str | None:
+    """Return a message when a profile name is not usable, or None when it is.
+
+    A name is not usable when it breaks the name format, or when it equals a taken name or differs
+    from one only in case.
+    """
+    if not NAME_PATTERN.match(name):
+        return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
+    taken_names: set[str] = set(taken)
+    if name in taken_names or similar_name(name=name, names=taken_names) is not None:
+        return f"A profile named '{name}' exists. Use another name."
+    return None
+
+
 def snapshot(name: str, env: Mapping[str, str], include_keys: bool = True, note: str = "") -> Profile:
     """Make a profile from the known variables of an env block. Custom variables are left out."""
     variables: dict[str, str] = {
