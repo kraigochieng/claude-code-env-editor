@@ -52,7 +52,8 @@ def test_auth_headers_api_key() -> None:
 
 def test_all_pass() -> None:
     checks: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(ok_handler))
-    assert [c.status for c in checks] == [PASS, PASS, PASS]
+    assert [c.name for c in checks] == ["url", "key", "model", "tools"]
+    assert [c.status for c in checks] == [PASS, PASS, PASS, PASS]
 
 
 def test_model_request_drops_suffix() -> None:
@@ -80,7 +81,7 @@ def test_missing_models_route_is_skipped_then_model_checked() -> None:
         return httpx.Response(200, json={"model": "m"})
 
     checks: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))
-    assert [c.status for c in checks] == [PASS, SKIP, PASS]
+    assert [c.status for c in checks] == [PASS, SKIP, PASS, PASS]  # url, key, model, tools
 
 
 def test_bad_model_fails() -> None:
@@ -150,7 +151,7 @@ def test_no_key_on_remote_custom_endpoint_fails() -> None:
 def test_no_key_on_local_endpoint_sends_request_without_key() -> None:
     values: dict[str, str] = {"ANTHROPIC_BASE_URL": "http://localhost:11434", "ANTHROPIC_MODEL": "llama"}
     checks: list[Check] = verify(endpoint=Endpoint.from_values(values=values), client=client(no_key_handler))
-    assert [c.status for c in checks] == [PASS, PASS, PASS]
+    assert [c.status for c in checks] == [PASS, PASS, PASS, PASS]  # url, key, model, tools
 
 
 def test_endpoint_kind_properties() -> None:
@@ -231,3 +232,89 @@ def test_no_model_says_the_key_is_not_proven() -> None:
     values: dict[str, str] = {k: v for k, v in VALUES.items() if k != "ANTHROPIC_MODEL"}
     checks: list[Check] = verify(endpoint=Endpoint.from_values(values=values), client=models_and_message(200, 200, {}))
     assert checks[-1].status == SKIP and "not proven" in checks[-1].detail
+
+
+# -- the tools check ---------------------------------------------------------
+
+
+def _tool_requests(requests: list[bytes]) -> list[bytes]:
+    return [body for body in requests if b'"tools"' in body]
+
+
+def test_tools_check_sends_a_plain_tool_and_then_the_pattern_of_the_artifact_tool() -> None:
+    bodies: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            bodies.append(request.read())
+        return ok_handler(request)
+
+    verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))
+    sent: list[bytes] = _tool_requests(bodies)
+    assert len(sent) == 2
+    assert b"pattern" not in sent[0]
+    assert b'"pattern":"^[^\\\\0]*$"' in sent[1].replace(b" ", b"")
+    assert b'"model":"deepseek-flash"' in sent[0].replace(b" ", b"")  # the suffix is dropped
+
+
+def test_a_rejected_pattern_fails_with_the_fix_and_the_provider_message() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and b"pattern" in request.read():
+            message: str = "Invalid schema for function 'Artifact': \"^[^\\\\0]*$\" is not a \"regex\" sk-secret-token"
+            return httpx.Response(400, json={"error": {"message": message}})
+        return ok_handler(request)
+
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))
+    tools: Check = checks[-1]
+    assert tools.name == "tools" and tools.status == FAIL
+    assert "--disallowedTools Artifact" in tools.detail and "permissions.deny" in tools.detail
+    assert "Invalid schema for function 'Artifact'" in tools.detail
+    assert "sk-secret-token" not in tools.detail  # the secret is masked
+    assert [c.status for c in checks[:3]] == [PASS, PASS, PASS]
+
+
+def test_a_rejected_plain_tool_fails_and_the_pattern_request_is_not_sent() -> None:
+    bodies: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            body: bytes = request.read()
+            bodies.append(body)
+            if b'"tools"' in body:
+                return httpx.Response(400, json={"error": {"message": "tools are not supported"}})
+        return ok_handler(request)
+
+    tools: Check = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))[-1]
+    assert tools.status == FAIL and "rejects tool definitions" in tools.detail
+    assert "tools are not supported" in tools.detail
+    assert len(_tool_requests(bodies)) == 1
+
+
+def test_a_rate_limit_on_the_tools_request_is_not_blamed_on_the_schema() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and b'"tools"' in request.read():
+            return httpx.Response(429, json={"error": {"message": "slow down"}})
+        return ok_handler(request)
+
+    tools: Check = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))[-1]
+    assert tools.status == FAIL and "rate limit" in tools.detail and "pattern" not in tools.detail
+
+
+def test_a_network_error_on_the_tools_request_fails_with_a_plain_message() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and b'"tools"' in request.read():
+            raise httpx.ConnectError("boom", request=request)
+        return ok_handler(request)
+
+    tools: Check = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))[-1]
+    assert tools.status == FAIL and "Cannot connect" in tools.detail
+
+
+def test_no_tools_check_when_the_model_check_fails() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(404, json={"error": {"message": "model not found"}})
+        return ok_handler(request)
+
+    checks: list[Check] = verify(endpoint=Endpoint.from_values(values=VALUES), client=client(handler))
+    assert "tools" not in [c.name for c in checks]
