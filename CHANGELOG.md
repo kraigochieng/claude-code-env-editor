@@ -1,6 +1,20 @@
 # CHANGELOG
 
 
+## v0.17.0 (2026-10-11)
+
+### Features
+
+- **tui**: Keep only apply and remove merge
+  ([`46cc449`](https://github.com/kraigochieng/claude-code-env-editor/commit/46cc4498a6cb4352b9a4c33ce39568aab5ff8a85))
+
+The profile list has no m key. The apply dialogs name no mode, and the help has no merge text. The
+  apply always replaces the known variables, so nothing of the previous endpoint stays. The CLI
+  keeps --merge and preset. README and screenshots follow.
+
+Closes #72
+
+
 ## v0.16.0 (2026-10-11)
 
 ### Features
