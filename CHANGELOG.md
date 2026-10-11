@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.9.0 (2026-10-11)
+
+### Features
+
+- **apply**: Add a wrapped summary format for narrow dialogs
+  ([`4b22b54`](https://github.com/kraigochieng/claude-code-env-editor/commit/4b22b54ffbc5bfe04f6958880fc6c38b2600dab5))
+
+Each change takes up to three short lines: name, value, previous value.
+
+Refs #54
+
+- **tui**: Add a profile page and a settings file target
+  ([`2cae87e`](https://github.com/kraigochieng/claude-code-env-editor/commit/2cae87e4856625559f36dfe324053f9bdc582c6b))
+
+p opens the profile list. Enter applies in replace mode and m in merge mode, after a dialog with the
+  changes. s saves the current values, with a question about the key. x deletes one of your
+  profiles. A key is refused for a file that may be committed. d can open any settings file, and tui
+  accepts --file. The confirm text scrolls, so the key hints always show.
+
+Closes #54
+
+
 ## v0.8.0 (2026-10-10)
 
 ### Features
