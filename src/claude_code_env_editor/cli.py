@@ -15,6 +15,7 @@ from claude_code_env_editor.apply import (
     ApplyPlan,
     format_plan,
     plan_apply,
+    plan_clear,
     secret_target_problem,
 )
 from claude_code_env_editor.auth import describe, visible_rows
@@ -160,6 +161,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With apply: allow a key in a file that may be committed.",
     )
+
+    p = add_command(
+        name="clear",
+        help_="Erase the known variables from the env block of a settings file.",
+        example=f"{PROG} clear --config-dir ~/.claude-work --dry-run",
+    )
+    _add_dir(p=p)
+    p.add_argument("--yes", action="store_true", help="Do not ask first.")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be removed and write nothing.")
 
     p = add_command(name="help", help_="Show the help of the tool or of one command.", example=f"{PROG} help set")
     p.add_argument("topic", nargs="?", metavar="<command>")
@@ -385,6 +395,28 @@ def cmd_profile(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clear(args: argparse.Namespace) -> int:
+    """Remove every known variable from the env block of the chosen file. Custom variables stay."""
+    target: Target = _chosen_target(args=args)
+    current: dict[str, str] = config.load_env(settings_file=target.settings_file)
+    plan: ApplyPlan = plan_clear(current_env=current)
+    print(f"Clear {target.settings_file}")
+    if not plan.writes:
+        print("Nothing to clear. The file has no known variables.")
+        return 0
+    for line in format_plan(plan=plan):
+        print(line)
+    if args.dry_run:
+        print("Nothing written (--dry-run).")
+        return 0
+    if not args.yes and not _ask_yes(question="Remove these variables?"):
+        print("Nothing written. Use --yes to write without a question.", file=sys.stderr)
+        return 1
+    path: Path = config.update_env(settings_file=target.settings_file, updates=plan.updates())
+    print(f"Cleared {len(plan.updates())} variables in {path}. The old file is kept as {path.name}.bak.")
+    return 0
+
+
 def cmd_vars(args: argparse.Namespace) -> int:
     """List every variable in the catalog with its type and meaning."""
     for spec in CATALOG:
@@ -444,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         "vars": cmd_vars,
         "dirs": cmd_dirs,
         "profile": cmd_profile,
+        "clear": cmd_clear,
         "tui": cmd_tui,
         "self-update": cmd_self_update,
         "self-uninstall": cmd_self_uninstall,
