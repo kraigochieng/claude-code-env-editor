@@ -98,3 +98,19 @@ def test_key_in_a_shared_project_file_is_a_problem(tmp_path: Path) -> None:
     assert secret_target_problem(profile=with_key, target=local) is None
     assert secret_target_problem(profile=with_key, target=user) is None
     assert secret_target_problem(profile=without_key, target=shared) is None
+
+
+def test_wrapped_summary_has_short_lines_and_masks_secrets() -> None:
+    with_key: Profile = Profile(
+        name="k",
+        variables={
+            "ANTHROPIC_BASE_URL": "https://openrouter.ai/api/with/a/very/long/path/that/would/not/fit/in/a/dialog",
+            "ANTHROPIC_AUTH_TOKEN": "sk-or-v1-new0000000000",
+        },
+    )
+    plan: ApplyPlan = plan_apply(profile=with_key, current_env=DEEPSEEK_ENV)
+    lines: list[str] = format_plan(plan=plan, wrap=True)
+    assert any(line.strip() == "set     ANTHROPIC_BASE_URL" for line in lines)
+    assert any(line.strip().startswith("was: https://api.deepseek.com") for line in lines)
+    assert not any("0123456789" in line or "new0000000000" in line for line in lines)
+    assert any(line.strip() == "keep    CLAUDE_CODE_MY_FLAG" for line in lines)

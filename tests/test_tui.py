@@ -4,8 +4,12 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from textual.widgets import DataTable, Static
+from textual.pilot import Pilot
+from textual.widgets import DataTable, Input, OptionList, Static
 
+from claude_code_env_editor import cli
+from claude_code_env_editor.profiles import Profile, load_user_profiles, save_profile
+from claude_code_env_editor.target import Target
 from claude_code_env_editor.tui.app import EnvEditorApp, TextScreen
 from claude_code_env_editor.verify import Check, Endpoint
 
@@ -176,3 +180,205 @@ async def test_x_then_yes_removes_the_value(tmp_path: Path) -> None:
         await pilot.pause()
     assert "env" not in json.loads((tmp_path / "settings.json").read_text())
     assert (tmp_path / "settings.json.bak").exists()
+
+
+@pytest.fixture
+def profiles_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the tool at a profiles file in a temporary directory."""
+    path: Path = tmp_path / "tool" / "profiles.toml"
+    monkeypatch.setattr("claude_code_env_editor.profiles.default_profiles_path", lambda: path)
+    return path
+
+
+def option_ids(option_list: OptionList) -> list[str | None]:
+    return [option_list.get_option_at_index(index=i).id for i in range(option_list.option_count)]
+
+
+async def open_profiles(app: EnvEditorApp, pilot: Pilot[None], highlight: str | None = None) -> OptionList:
+    """Press p and optionally move the highlight to a profile."""
+    await pilot.press("p")
+    await pilot.pause()
+    assert type(app.screen).__name__ == "ProfileScreen"
+    option_list: OptionList = app.screen.query_one(selector="#profiles", expect_type=OptionList)
+    if highlight is not None:
+        option_list.highlighted = option_ids(option_list).index(highlight)
+        await pilot.pause()
+    return option_list
+
+
+async def test_p_lists_built_in_profiles(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        option_list: OptionList = await open_profiles(app, pilot)
+        assert "deepseek" in option_ids(option_list) and "openrouter" in option_ids(option_list)
+
+
+async def test_apply_replaces_stale_values_after_a_yes(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://openrouter.ai/api", "API_TIMEOUT_MS": "5000"}})
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot, highlight="deepseek")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ConfirmScreen"
+        question: str = str(app.screen.query_one(selector="#question", expect_type=Static).render())
+        assert "remove" in question and "API_TIMEOUT_MS" in question
+        assert "deepseek-flash[1m]" in question  # a value with brackets shows as it is
+        await pilot.press("y")
+        await pilot.pause()
+    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
+    assert env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
+    assert "API_TIMEOUT_MS" not in env
+
+
+async def test_apply_with_no_answers_writes_nothing(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "keep-me"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot, highlight="deepseek")
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+    assert json.loads((tmp_path / "settings.json").read_text())["env"] == {"ANTHROPIC_MODEL": "keep-me"}
+
+
+async def test_m_applies_in_merge_mode(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"API_TIMEOUT_MS": "5000"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot, highlight="openrouter")
+        await pilot.press("m")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
+    assert env["API_TIMEOUT_MS"] == "5000" and env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
+
+
+async def test_s_saves_the_current_values_with_the_key(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-1234567890abcd"}})
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot)
+        await pilot.press("s")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "InputScreen"
+        app.screen.query_one(selector=Input).value = "work-ds"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ConfirmScreen"  # the key question
+        await pilot.press("y")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ProfileScreen"  # the list opens again
+    saved: dict[str, Profile] = load_user_profiles(path=profiles_file)
+    assert saved["work-ds"].variables["ANTHROPIC_AUTH_TOKEN"] == "sk-1234567890abcd"
+
+
+async def test_s_can_leave_the_key_out(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(
+        json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-1234567890abcd"}})
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot)
+        await pilot.press("s")
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "nokey"
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+    assert not load_user_profiles(path=profiles_file)["nokey"].has_key
+
+
+async def test_save_refuses_a_built_in_or_bad_name(tmp_path: Path, profiles_file: Path) -> None:
+    (tmp_path / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "m"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot)
+        await pilot.press("s")
+        await pilot.pause()
+        for bad in ("deepseek", "has space"):
+            app.screen.query_one(selector=Input).value = bad
+            await pilot.press("enter")
+            await pilot.pause()
+            assert type(app.screen).__name__ == "InputScreen"
+            assert str(app.screen.query_one(selector="#error", expect_type=Static).render()) != ""
+    assert not profiles_file.exists()
+
+
+async def test_x_deletes_your_profile_after_a_yes_and_not_a_built_in(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(profile=Profile(name="mine", variables={"ANTHROPIC_MODEL": "m"}), path=profiles_file)
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot, highlight="deepseek")
+        await pilot.press("x")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1  # a built-in cannot be deleted: no dialog
+        status: str = str(app.query_one(selector="#status", expect_type=Static).render())
+        assert "built-in" in status
+        await open_profiles(app, pilot, highlight="mine")
+        await pilot.press("x")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "ConfirmScreen"
+        await pilot.press("y")
+        await pilot.pause()
+    assert "mine" not in load_user_profiles(path=profiles_file)
+
+
+async def test_a_key_is_refused_for_a_shared_project_file(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(
+        profile=Profile(name="keyed", variables={"ANTHROPIC_AUTH_TOKEN": "sk-1234567890abcd"}), path=profiles_file
+    )
+    shared: Path = tmp_path / "proj" / ".claude" / "settings.json"
+    target: Target = Target.from_file(settings_file=shared, known_dirs=[])
+    app: EnvEditorApp = EnvEditorApp(target=target)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await open_profiles(app, pilot, highlight="keyed")
+        await pilot.press("enter")
+        await pilot.pause()
+        assert len(app.screen_stack) == 1  # no confirm dialog
+        status: str = str(app.query_one(selector="#status", expect_type=Static).render())
+        assert "Refused" in status and "committed" in status
+    assert not shared.exists()
+
+
+async def test_d_can_open_another_settings_file(tmp_path: Path, profiles_file: Path) -> None:
+    other: Path = tmp_path / "proj" / ".claude" / "settings.local.json"
+    other.parent.mkdir(parents=True)
+    other.write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "project-model"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        option_list: OptionList = app.screen.query_one(selector=OptionList)
+        option_list.highlighted = option_list.option_count - 1
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "InputScreen"
+        app.screen.query_one(selector=Input).value = str(other)
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.target.settings_file == other and not app.target.user_level
+        assert next(r for r in app.rows if r.name == "ANTHROPIC_MODEL").value == "project-model"
+
+
+def test_tui_command_accepts_a_file_option() -> None:
+    args = cli.build_parser().parse_args(["tui", "--file", "x.json"])
+    assert args.file == Path("x.json")
