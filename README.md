@@ -135,7 +135,7 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
 
 ### Profiles in the TUI
 
-`a` on a profile opens the list of places:
+`a` on a profile opens a dialog that shows the variables of the profile (the key masked) above the list of places:
 
 - **Your login folders.** Each one shows the state of the profile there: `matches this profile`,
   `has other values (3 differ)`, or `empty`.

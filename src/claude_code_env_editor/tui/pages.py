@@ -28,10 +28,12 @@ from claude_code_env_editor.destinations import (
     short_path,
 )
 from claude_code_env_editor.envvars import (
+    CATALOG,
     CHOICE,
     SOURCE_ENV,
     SOURCE_UNSET,
     Row,
+    mask,
     resolve,
 )
 from claude_code_env_editor.profiles import (
@@ -181,7 +183,11 @@ class BasePage(Screen[None]):
         return places
 
     def pick_destination(
-        self, title: str, on_chosen: Callable[[Destination], None], profile: Profile | None = None
+        self,
+        title: str,
+        on_chosen: Callable[[Destination], None],
+        profile: Profile | None = None,
+        intro: Text | None = None,
     ) -> None:
         """Let the user choose a login folder, or type a project folder, and pass the place to on_chosen.
 
@@ -227,9 +233,25 @@ class BasePage(Screen[None]):
                 callback=folder_typed,
             )
 
-        self.app.push_screen(screen=PickScreen(title=title, options=options), callback=chosen)
+        self.app.push_screen(screen=PickScreen(title=title, options=options, intro=intro), callback=chosen)
 
     # -- apply -------------------------------------------------------------
+
+    @staticmethod
+    def variables_text(profile: Profile) -> Text:
+        """Return the variables of a profile as lines of text. Secrets are masked."""
+        text: Text = Text()
+        if not profile.variables:
+            text.append("This profile has no variables.\n", style="dim")
+            text.append("Applying it removes the known variables of the place.", style="dim")
+            return text
+        text.append("This profile sets:", style="dim")
+        for spec in CATALOG:
+            if spec.name in profile.variables:
+                value: str = mask(value=profile.variables[spec.name], secret=spec.secret)
+                text.append(f"\n  {spec.name:<34} ")
+                text.append(value, style="bold")
+        return text
 
     def begin_apply(self, name: str) -> None:
         """Ask where to apply the profile, then show the changes."""
@@ -241,6 +263,7 @@ class BasePage(Screen[None]):
         self.pick_destination(
             title=f"Apply '{name}' to which place?",
             profile=profile,
+            intro=self.variables_text(profile=profile),
             on_chosen=lambda place: self.start_apply(profile=profile, destination=place),
         )
 

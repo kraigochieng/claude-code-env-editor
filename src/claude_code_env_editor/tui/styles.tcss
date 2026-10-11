@@ -48,3 +48,5 @@ ModalScreen { align: center middle; background: #000000 60%; }
 .skip { color: $muted; }
 
 #question-box { height: auto; max-height: 18; }
+
+#intro-box { height: auto; max-height: 11; margin-bottom: 1; }

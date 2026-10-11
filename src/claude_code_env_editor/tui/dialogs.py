@@ -234,17 +234,25 @@ class PickScreen(ModalScreen[str | None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding(key="escape", action="cancel", description="Cancel")]
 
-    def __init__(self, title: str, options: list[tuple[str, str]]) -> None:
-        """Keep the title and the (id, label) options."""
+    def __init__(self, title: str, options: list[tuple[str, str]], intro: Text | None = None) -> None:
+        """Keep the title and the (id, label) options. intro is a text shown above the list, for example values."""
         super().__init__()
         self.title_text, self.options = title, options
+        self.intro: Text | None = intro
 
     def compose(self) -> ComposeResult:
-        """Build the dialog: title, option list, hint."""
+        """Build the dialog: title, optional intro, option list, hint."""
         with Vertical(classes=DIALOG_CLASS):
             yield Static(self.title_text, classes="heading")
+            if self.intro is not None:
+                with VerticalScroll(id="intro-box"):
+                    yield Static(self.intro, id="intro")
             yield OptionList(*[Option(Text(label), id=key) for key, label in self.options])
             yield Static(hint_line(app=self.app, items=[("enter", "choose"), ("esc", "cancel")]), classes="hint")
+
+    def on_mount(self) -> None:
+        """Put the keyboard focus on the list, so that Enter chooses the highlighted place."""
+        self.query_one(selector=OptionList).focus()
 
     def on_click(self, event: events.Click) -> None:
         """Close the dialog without a choice when the click is outside the box."""

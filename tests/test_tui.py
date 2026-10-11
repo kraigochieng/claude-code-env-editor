@@ -892,3 +892,61 @@ async def test_a_click_outside_closes_the_pick_list_the_help_and_the_name_box(
             await pilot.click(offset=(0, 0))
             await pilot.pause()
             assert isinstance(app.screen, ProfileListPage)
+
+
+# -- the apply dialog shows the variables of the profile ----------------------
+
+
+async def test_the_place_list_shows_the_variables_of_the_profile_with_the_key_masked(
+    tmp_path: Path, profiles_file: Path
+) -> None:
+    save_profile(
+        profile=Profile(
+            name="keyed",
+            variables={
+                "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+                "ANTHROPIC_AUTH_TOKEN": "sk-0123456789abcdef",
+                "ANTHROPIC_MODEL": "deepseek-flash[1m]",
+            },
+        ),
+        path=profiles_file,
+    )
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "keyed")
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen_name(app) == "PickScreen"
+        intro: str = text_of(app, "#intro")
+        assert "This profile sets:" in intro
+        assert "ANTHROPIC_BASE_URL" in intro and "https://api.deepseek.com/anthropic" in intro
+        assert "deepseek-flash[1m]" in intro
+        assert "ANTHROPIC_AUTH_TOKEN" in intro and "0123456789" not in intro  # the key is masked
+        assert [name for name in ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL")
+                if intro.index(name) >= 0] == ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_MODEL"]
+
+
+async def test_the_place_list_of_an_empty_profile_says_what_applying_does(tmp_path: Path, profiles_file: Path) -> None:
+    save_profile(profile=Profile(name="empty", variables={}), path=profiles_file)
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "empty")
+        await pilot.press("a")
+        await pilot.pause()
+        assert "no variables" in text_of(app, "#intro")
+        assert "removes the known variables" in text_of(app, "#intro")
+
+
+async def test_enter_in_the_place_list_works_at_once_without_a_tab(tmp_path: Path, profiles_file: Path) -> None:
+    write_settings(tmp_path, {"API_TIMEOUT_MS": "5000"})
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await move_to_profile(app, pilot, "deepseek")
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press("enter")  # the list has the focus, although the dialog has a variables box above it
+        await pilot.pause()
+        assert screen_name(app) == "ConfirmScreen"
