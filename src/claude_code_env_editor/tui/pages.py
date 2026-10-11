@@ -259,12 +259,11 @@ class BasePage(Screen[None]):
         if problem:
             self.set_status(message=f"Refused: {problem}", error=True)
             return
-        plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode="replace")
+        plan: ApplyPlan = plan_apply(profile=profile, current_env=current)
         if not plan.writes:
             self.set_status(message=f"Nothing to change: {destination.label} already matches '{profile.name}'.")
             return
         lines: list[str] = format_plan(plan=plan, wrap=True)
-        lines += [f"warning: {warning}" for warning in plan.warnings]
         if any(c.action == "remove" and c.name in SECRET_NAMES for c in plan.changes):
             lines.append("note: the key is removed because the endpoint changes. Set a new one in the profile.")
 

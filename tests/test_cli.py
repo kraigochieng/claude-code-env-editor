@@ -18,7 +18,7 @@ def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     assert "usage" in capsys.readouterr().out.lower()
 
 
-@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "preset", "verify", "export", "vars", "help", "self-update", "self-uninstall", "dirs", "profile"])
+@pytest.mark.parametrize("command", ["tui", "show", "set", "unset", "verify", "export", "vars", "help", "self-update", "self-uninstall", "dirs", "profile"])
 def test_every_command_has_help(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         cli.main([command, "--help"])
@@ -63,10 +63,6 @@ def test_show_masks_secret_unless_reveal(tmp_path: Path, monkeypatch: pytest.Mon
     assert "sk-0123456789abcdef" in capsys.readouterr().out
 
 
-def test_preset_applies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert run(["preset", "deepseek"], tmp_path, monkeypatch) == 0
-    env: dict[str, str] = json.loads(s=(tmp_path / "settings.json").read_text())["env"]
-    assert env["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
 
 
 def test_export_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -233,13 +229,6 @@ def test_profile_apply_without_yes_and_without_a_terminal_writes_nothing(
     assert (tmp_path / "settings.json").read_text() == before
 
 
-def test_profile_apply_merge_keeps_unlisted_variables(
-    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
-    assert run(["profile", "apply", "openrouter", "--merge", "--yes"], tmp_path, monkeypatch) == 0
-    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
-    assert env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] == "deepseek-flash" and "ANTHROPIC_AUTH_TOKEN" in env
 
 
 def test_profile_apply_to_a_file_works_and_refuses_a_key_in_a_shared_file(
@@ -271,13 +260,14 @@ def test_config_dir_and_file_exclude_each_other(tmp_path: Path, capsys: pytest.C
     assert "not allowed with" in capsys.readouterr().err
 
 
-def test_preset_alias_keeps_merging_and_prints_a_tip(
-    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (tmp_path / "settings.json").write_text(json.dumps(DEEPSEEK_SETTINGS))
-    assert run(["preset", "openrouter"], tmp_path, monkeypatch) == 0
-    env: dict[str, str] = json.loads((tmp_path / "settings.json").read_text())["env"]
-    assert env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
-    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" in env  # merge keeps old values, as before
-    assert "profile apply" in capsys.readouterr().out
-    assert run(["preset", "nope"], tmp_path, monkeypatch) == 2
+
+def test_the_preset_command_and_the_merge_option_are_gone(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["preset", "deepseek"])
+    assert exc.value.code == 2
+    with pytest.raises(SystemExit) as merge_exc:
+        cli.main(["profile", "apply", "deepseek", "--merge"])
+    assert merge_exc.value.code == 2
+    assert "unrecognized arguments: --merge" in capsys.readouterr().err
+    assert "merge" not in cli.build_parser().format_help().lower()
+    assert "preset" not in cli.build_parser().format_help().lower()

@@ -56,7 +56,7 @@ Update: `claude-code-env-editor self-update [--version X.Y.Z]`. Remove: `claude-
 ```sh
 claude-code-env-editor          # open the TUI
 claude-code-env-editor show     # print variables, values, and sources
-claude-code-env-editor preset deepseek
+claude-code-env-editor profile apply deepseek
 claude-code-env-editor set ANTHROPIC_AUTH_TOKEN      # asks for the secret
 claude-code-env-editor verify
 claude-code-env-editor export   # 'export NAME=value' lines
@@ -122,19 +122,16 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
 
 `apply` shows what it changes and asks before it writes (`--yes` skips the question).
 
-- **Replace mode (default).** It sets every variable of the profile and removes every known variable that the
+- **Apply replaces.** It sets every variable of the profile and removes every known variable that the
   profile does not list. So no model name or key of the previous endpoint stays behind. I tested this with Claude
   Code: after a replace, a removed `ANTHROPIC_MODEL` is gone and Claude Code uses its default model.
 - **A key stays when the endpoint host does not change**, because it goes to the same place. A key is removed when
   the host changes, so it never goes to another provider.
-- **`--merge`** (CLI only) changes only the listed variables. Old values stay. The tool warns when a key would go to a new host.
-  The TUI has no merge: its apply always replaces.
 - **Custom variables** in the `env` block are never touched.
 - **Keys in a shared file.** A profile with a key is refused for a file that may be committed, for example
   `.claude/settings.json` of a project. Use `.claude/settings.local.json` or a config directory. The option
   `--allow-secret-in-shared-file` overrides this.
 - The old file is kept as `settings.json.bak`, next to the settings file.
-- `preset NAME` still works. It runs `profile apply NAME --merge --yes`, as before.
 
 ### Profiles in the TUI
 
@@ -179,7 +176,7 @@ The endpoint decides which header it accepts. So the tool picks the variable fro
 | Base URL | Variable shown |
 |---|---|
 | empty, or `api.anthropic.com` | `ANTHROPIC_API_KEY`, or no key when you use a Claude login |
-| OpenRouter, Z.ai, Moonshot, DeepSeek, LiteLLM, Ollama (the presets) | `ANTHROPIC_AUTH_TOKEN` |
+| OpenRouter, Z.ai, Moonshot, DeepSeek, LiteLLM, Ollama (the templates) | `ANTHROPIC_AUTH_TOKEN` |
 | any other URL | both variables |
 
 A hidden variable stays visible when it has a value, with a warning in the banner. The mapping comes from provider guides. Check it for your provider. If a provider rejects one header, try the other variable.
@@ -246,7 +243,6 @@ effort level, and the compact window. A template never holds a key.
   second copy, so a profile that you delete stays deleted. A file from an older version gets only the templates
   that it does not have yet. A profile with a template's name is never replaced.
 - **Get one back.** `profile save deepseek --from deepseek` copies the template again, when the name is free.
-- The older `preset` command still works. It merges a template or a profile into the file.
 
 ## Several Claude Code logins
 

@@ -43,11 +43,3 @@ def load_presets() -> dict[str, Preset]:
         )
         for preset_id, body in raw.items()
     }
-
-
-def preset_values(preset_id: str) -> dict[str, str]:
-    """Return the variables of one preset, without its label."""
-    presets: dict[str, Preset] = load_presets()
-    if preset_id not in presets:
-        raise KeyError(f"Unknown preset '{preset_id}'. Choose one of: {', '.join(presets)}.")
-    return dict(presets[preset_id].variables)

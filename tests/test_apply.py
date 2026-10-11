@@ -35,7 +35,7 @@ def test_host_of() -> None:
 
 
 def test_replace_removes_stale_variables_and_the_key_of_another_host() -> None:
-    plan: ApplyPlan = plan_apply(profile=OPENROUTER, current_env=DEEPSEEK_ENV, mode="replace")
+    plan: ApplyPlan = plan_apply(profile=OPENROUTER, current_env=DEEPSEEK_ENV)
     changes: dict[str, Change] = by_name(plan)
     assert changes["ANTHROPIC_BASE_URL"].action == "set"
     assert changes["ANTHROPIC_MODEL"].action == "set"
@@ -51,7 +51,7 @@ def test_replace_keeps_the_key_when_the_host_does_not_change() -> None:
         name="ds2",
         variables={"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_MODEL": "deepseek-v4-pro"},
     )
-    changes: dict[str, Change] = by_name(plan_apply(profile=same_host, current_env=DEEPSEEK_ENV, mode="replace"))
+    changes: dict[str, Change] = by_name(plan_apply(profile=same_host, current_env=DEEPSEEK_ENV))
     assert changes["ANTHROPIC_AUTH_TOKEN"].action == "keep"
     assert changes["ANTHROPIC_BASE_URL"].action == "same"
     assert changes["ANTHROPIC_MODEL"].action == "set"
@@ -66,12 +66,6 @@ def test_replace_sets_the_key_of_the_profile() -> None:
     assert changes["ANTHROPIC_AUTH_TOKEN"].old == "sk-deepseek-0123456789"
 
 
-def test_merge_changes_only_the_listed_variables_and_warns_about_a_key_for_another_host() -> None:
-    plan: ApplyPlan = plan_apply(profile=OPENROUTER, current_env=DEEPSEEK_ENV, mode="merge")
-    changes: dict[str, Change] = by_name(plan)
-    assert "ANTHROPIC_DEFAULT_HAIKU_MODEL" not in changes and "ANTHROPIC_AUTH_TOKEN" not in changes
-    assert set(plan.updates()) == {"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL"}
-    assert len(plan.warnings) == 1 and "openrouter.ai" in plan.warnings[0]
 
 
 def test_nothing_to_write_when_the_target_already_matches() -> None:

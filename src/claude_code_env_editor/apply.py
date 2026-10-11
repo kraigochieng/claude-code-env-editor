@@ -12,7 +12,6 @@ from claude_code_env_editor.envvars import BY_NAME, CATALOG, mask
 from claude_code_env_editor.profiles import Profile
 from claude_code_env_editor.target import Target
 
-Mode: TypeAlias = Literal["replace", "merge"]
 Action: TypeAlias = Literal["set", "remove", "same", "keep"]
 
 DEFAULT_HOST: Final[str] = "api.anthropic.com"
@@ -37,10 +36,8 @@ class ApplyPlan(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     profile_name: str
-    mode: Mode
     changes: list[Change]
     custom_kept: list[str]
-    warnings: list[str]
 
     @property
     def writes(self) -> bool:
@@ -63,23 +60,19 @@ def host_of(url: str | None) -> str:
     return urlparse(url=url).netloc.lower() if url else DEFAULT_HOST
 
 
-def plan_apply(profile: Profile, current_env: Mapping[str, str], mode: Mode = "replace") -> ApplyPlan:
+def plan_apply(profile: Profile, current_env: Mapping[str, str]) -> ApplyPlan:
     """Work out what applying a profile does to an env block.
 
-    Replace mode sets every variable of the profile and removes every known variable that the profile
-    does not list. A key stays when the endpoint host does not change, because it goes to the same place.
-    Merge mode only sets the listed variables. Custom variables are never touched.
+    It sets every variable of the profile and removes every known variable that the profile does not list,
+    so nothing of the previous endpoint stays. A key stays when the endpoint host does not change, because
+    it goes to the same place. Custom variables are never touched.
     """
     known_current: dict[str, str] = {name: value for name, value in current_env.items() if name in BY_NAME}
     custom: list[str] = [name for name in current_env if name not in BY_NAME]
     old_host: str = host_of(url=current_env.get("ANTHROPIC_BASE_URL"))
-    if mode == "replace" or "ANTHROPIC_BASE_URL" in profile.variables:
-        new_host: str = host_of(url=profile.variables.get("ANTHROPIC_BASE_URL"))
-    else:
-        new_host = old_host
+    new_host: str = host_of(url=profile.variables.get("ANTHROPIC_BASE_URL"))
 
     changes: list[Change] = []
-    warnings: list[str] = []
     for spec in CATALOG:
         name: str = spec.name
         old: str = known_current.get(name, "")
@@ -89,19 +82,12 @@ def plan_apply(profile: Profile, current_env: Mapping[str, str], mode: Mode = "r
                 changes.append(Change(name=name, action="same", old=old, new=new))
             else:
                 changes.append(Change(name=name, action="set", old=old, new=new))
-        elif name in known_current and mode == "replace":
+        elif name in known_current:
             if spec.secret and old_host == new_host:
                 changes.append(Change(name=name, action="keep", old=old, reason="same endpoint host as before"))
             else:
                 changes.append(Change(name=name, action="remove", old=old))
-        elif name in known_current and spec.secret and new_host != old_host:
-            warnings.append(
-                f"{name} stays in the file. Claude Code will send it to {new_host}, not to {old_host}. "
-                "Set a key for the new endpoint."
-            )
-    return ApplyPlan(
-        profile_name=profile.name, mode=mode, changes=changes, custom_kept=custom, warnings=warnings
-    )
+    return ApplyPlan(profile_name=profile.name, changes=changes, custom_kept=custom)
 
 
 def format_plan(plan: ApplyPlan, reveal: bool = False, wrap: bool = False) -> list[str]:
