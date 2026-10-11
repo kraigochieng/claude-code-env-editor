@@ -211,3 +211,36 @@ def test_snapshot_keeps_only_known_variables_and_can_drop_keys() -> None:
     assert with_key.variables == DEEPSEEK
     without_key: Profile = snapshot(name="s", env=env, include_keys=False)
     assert "ANTHROPIC_AUTH_TOKEN" not in without_key.variables and not without_key.has_key
+
+
+# -- names are unique, also in case ------------------------------------------
+
+
+def test_a_name_that_differs_only_in_case_is_refused_on_save(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    save_profile(profile=Profile(name="work", variables={}), path=path)
+    with pytest.raises(ProfileError, match="not case sensitive"):
+        save_profile(profile=Profile(name="Work", variables={}), path=path)
+    with pytest.raises(ProfileError, match="not case sensitive"):
+        save_profile(profile=Profile(name="WORK", variables={}), path=path, overwrite=True)
+    assert [n for n in load_profiles(path=path) if n.casefold() == "work"] == ["work"]
+
+
+def test_a_name_that_differs_only_in_case_is_refused_on_rename(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    with pytest.raises(ProfileError, match="not case sensitive"):
+        rename_profile(old="zai", new="DeepSeek", path=path)
+
+
+def test_a_profile_may_change_the_case_of_its_own_name(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    rename_profile(old="zai", new="Zai", path=path)
+    assert "Zai" in load_profiles(path=path) and "zai" not in load_profiles(path=path)
+
+
+def test_overwriting_the_same_name_keeps_one_profile(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    save_profile(profile=Profile(name="work", variables={"ANTHROPIC_MODEL": "a"}), path=path)
+    save_profile(profile=Profile(name="work", variables={"ANTHROPIC_MODEL": "b"}), path=path, overwrite=True)
+    names: list[str] = [n for n in load_profiles(path=path) if n == "work"]
+    assert names == ["work"] and load_profiles(path=path)["work"].variables == {"ANTHROPIC_MODEL": "b"}

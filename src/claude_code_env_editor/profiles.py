@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
-from typing import ClassVar, Final, Mapping
+from typing import ClassVar, Final, Iterable, Mapping
 from urllib.parse import urlparse
 
 import tomli_w
@@ -167,6 +167,18 @@ def get_profile(name: str, path: Path | None = None, include_templates: bool = F
     raise ProfileError(f"Unknown profile '{name}'. Choose one of: {', '.join(profiles) or 'none'}.")
 
 
+def similar_name(name: str, names: Iterable[str]) -> str | None:
+    """Return the name in names that differs from name only in case, or None.
+
+    An identical name is not a similar name. The caller checks that case with its own rule.
+    """
+    wanted: str = name.casefold()
+    for other in names:
+        if other != name and other.casefold() == wanted:
+            return other
+    return None
+
+
 def snapshot(name: str, env: Mapping[str, str], include_keys: bool = True, note: str = "") -> Profile:
     """Make a profile from the known variables of an env block. Custom variables are left out."""
     variables: dict[str, str] = {
@@ -184,6 +196,9 @@ def save_profile(profile: Profile, path: Path | None = None, overwrite: bool = F
     """
     file_path: Path = path or default_profiles_path()
     profiles: dict[str, Profile] = load_profiles(path=file_path)
+    clash: str | None = similar_name(name=profile.name, names=profiles)
+    if clash is not None:
+        raise ProfileError(f"A profile named '{clash}' exists. Names are not case sensitive. Choose another name.")
     if profile.name in profiles and not overwrite:
         raise ProfileError(f"A profile named '{profile.name}' exists. Use --force to replace it.")
     profiles[profile.name] = Profile(name=profile.name, variables=profile.variables, note=profile.note)
@@ -214,6 +229,9 @@ def rename_profile(old: str, new: str, path: Path | None = None) -> None:
         raise ProfileError("The new name is the same as the old name.")
     if new in profiles:
         raise ProfileError(f"A profile named '{new}' exists. Choose another name.")
+    clash: str | None = similar_name(name=new, names=[name for name in profiles if name != old])
+    if clash is not None:
+        raise ProfileError(f"A profile named '{clash}' exists. Names are not case sensitive. Choose another name.")
     try:
         renamed: Profile = Profile(name=new, variables=profiles[old].variables, note=profiles[old].note)
     except ValidationError as exc:
