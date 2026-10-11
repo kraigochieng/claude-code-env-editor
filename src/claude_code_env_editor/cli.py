@@ -13,7 +13,6 @@ from typing import Final
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.apply import (
     ApplyPlan,
-    Mode,
     format_plan,
     plan_apply,
     secret_target_problem,
@@ -29,7 +28,6 @@ from claude_code_env_editor.envvars import (
     resolve,
     validate,
 )
-from claude_code_env_editor.presets import Preset, load_presets
 from claude_code_env_editor.profiles import (
     Profile,
     ProfileError,
@@ -116,10 +114,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_dir(p=p)
     p.add_argument("name", metavar="NAME")
 
-    p = add_command(name="preset", help_="Apply a sample endpoint, or list them.", example=f"{PROG} preset deepseek")
-    _add_dir(p=p)
-    p.add_argument("name", nargs="?", metavar="PRESET", help="Preset id. Omit it to list the presets.")
-
     p = add_command(name="verify", help_="Check the endpoint, the key, and the model.", example=f"{PROG} verify --config-dir ~/.claude-work")
     _add_dir(p=p)
 
@@ -160,7 +154,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="With save: replace a profile of the same name.")
     p.add_argument("--reveal", action="store_true", help="With show: print keys in full.")
     p.add_argument("--yes", action="store_true", help="With apply or delete: do not ask first.")
-    p.add_argument("--merge", action="store_true", help="With apply: change only the listed variables.")
     p.add_argument("--dry-run", action="store_true", help="With apply: show the changes and write nothing.")
     p.add_argument(
         "--allow-secret-in-shared-file",
@@ -242,25 +235,6 @@ def cmd_unset(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_preset(args: argparse.Namespace) -> int:
-    """List the presets, or apply one to settings.json."""
-    presets: dict[str, Preset] = load_presets()
-    if not args.name:
-        for pid, preset in presets.items():
-            print(f"{pid:<12} {preset.label:<24} {preset.base_url}")
-        return 0
-    try:
-        preset_profile: Profile = get_profile(name=args.name, include_templates=True)
-    except ProfileError as exc:
-        print(exc, file=sys.stderr)
-        return 2
-    code: int = _apply(
-        args=args, profile=preset_profile, mode="merge", assume_yes=True, dry_run=False, allow_shared_secret=False
-    )
-    print(f"Tip: '{PROG} profile apply {args.name}' also removes values of the previous endpoint.")
-    return code
-
-
 def cmd_verify(args: argparse.Namespace) -> int:
     """Run the verify checks and return 1 if any check failed."""
     target: Target = _chosen_target(args=args)
@@ -319,7 +293,6 @@ def _ask_yes(question: str) -> bool:
 def _apply(
     args: argparse.Namespace,
     profile: Profile,
-    mode: Mode,
     assume_yes: bool,
     dry_run: bool,
     allow_shared_secret: bool,
@@ -331,12 +304,10 @@ def _apply(
         print(f"Refused: {problem}", file=sys.stderr)
         return 2
     current: dict[str, str] = config.load_env(settings_file=target.settings_file)
-    plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode=mode)
-    print(f"Profile '{profile.name}' -> {target.settings_file} ({mode} mode)")
+    plan: ApplyPlan = plan_apply(profile=profile, current_env=current)
+    print(f"Profile '{profile.name}' -> {target.settings_file}")
     for line in format_plan(plan=plan):
         print(line)
-    for warning in plan.warnings:
-        print(f"  warning: {warning}")
     removed_key: bool = any(c.action == "remove" and BY_NAME[c.name].secret for c in plan.changes)
     if removed_key:
         print(f"  note: the key was removed because the endpoint changed. Next: {PROG} set ANTHROPIC_AUTH_TOKEN")
@@ -394,7 +365,6 @@ def cmd_profile(args: argparse.Namespace) -> int:
         return _apply(
             args=args,
             profile=get_profile(name=args.name),
-            mode="merge" if args.merge else "replace",
             assume_yes=args.yes,
             dry_run=args.dry_run,
             allow_shared_secret=args.allow_secret_in_shared_file,
@@ -469,7 +439,6 @@ def main(argv: list[str] | None = None) -> int:
         "show": cmd_show,
         "set": cmd_set,
         "unset": cmd_unset,
-        "preset": cmd_preset,
         "verify": cmd_verify,
         "export": cmd_export,
         "vars": cmd_vars,
