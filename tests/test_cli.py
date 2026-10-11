@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from claude_code_env_editor import cli
+from claude_code_env_editor.cli import common
 
 
 def run(args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
@@ -315,7 +316,7 @@ def test_clear_dry_run_writes_nothing(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_clear_answer_no_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings: Path = write_env(tmp_path, {"ANTHROPIC_MODEL": "m1"})
     before: str = settings.read_text()
-    monkeypatch.setattr(cli, "_ask_yes", lambda question: False)
+    monkeypatch.setattr(common, "ask_yes", lambda question: False)
     assert run(["clear"], tmp_path, monkeypatch) == 1
     assert settings.read_text() == before
 
