@@ -23,6 +23,25 @@ The list of places shows what the profile sets, with the key masked. A profile w
 
 Closes #76
 
+### Refactoring
+
+- **cli**: Split cli.py into a package
+  ([`cf95c38`](https://github.com/kraigochieng/claude-code-env-editor/commit/cf95c38cacc9f8be24b57cc758b97009da746c47))
+
+cli.py had 492 lines and build_parser had about 100 lines. The package has one module for each
+  topic:
+
+- parser: one small function for each command - common: target, yes/no question, secret, and shell
+  quote helpers - variables: show, set, unset, verify, export, vars, clear - profiles: the profile
+  command, one function for each action - places: dirs - maintenance: self-update, self-uninstall,
+  tui
+
+The entry point claude_code_env_editor.cli:main does not change. The help text of every command is
+  identical to the text before the split. The test that patched cli._ask_yes patches
+  cli.common.ask_yes.
+
+Closes #80
+
 
 ## v0.18.0 (2026-10-11)
 
