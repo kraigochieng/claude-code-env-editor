@@ -9,7 +9,7 @@ from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, OptionList, Static
 
 from claude_code_env_editor import cli
-from claude_code_env_editor.profiles import Profile, load_user_profiles, save_profile
+from claude_code_env_editor.profiles import Profile, load_profiles, save_profile, templates
 from claude_code_env_editor.target import Target
 from claude_code_env_editor.tui.app import EnvEditorApp, TextScreen
 from claude_code_env_editor.tui.pages import ProfileListPage, VariablesPage
@@ -140,23 +140,23 @@ async def test_enter_opens_a_profile_and_shows_its_variables(tmp_path: Path, pro
         page: VariablesPage = await open_profile(app, pilot, "deepseek")
         values: dict[str, str] = {r.name: r.value for r in page.rows}
         assert values["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
-        assert "deepseek (built-in, read-only)" in text_of(app, "#banner")
+        assert "profile     deepseek\n" in text_of(app, "#banner")
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, ProfileListPage)
 
 
-async def test_a_built_in_profile_is_read_only_and_copy_makes_an_editable_one(
-    tmp_path: Path, profiles_file: Path
-) -> None:
+async def test_a_template_profile_is_editable_and_copy_makes_another(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await open_profile(app, pilot, "deepseek")
+        await move_to_variable(app, pilot, "ANTHROPIC_MODEL")
         await pilot.press("e")
         await pilot.pause()
-        assert isinstance(app.screen, VariablesPage)  # no edit dialog
-        assert "read-only" in text_of(app, "#status")
+        assert screen_name(app) == "EditScreen"  # a template profile is a normal profile
+        await pilot.press("escape")
+        await pilot.pause()
         await pilot.press("c")
         await pilot.pause()
         assert screen_name(app) == "InputScreen"
@@ -165,7 +165,7 @@ async def test_a_built_in_profile_is_read_only_and_copy_makes_an_editable_one(
         await pilot.pause()
         assert isinstance(app.screen, VariablesPage) and app.screen.source.name == "deepseek-copy"
         assert app.screen.source.editable
-    copied: Profile = load_user_profiles(path=profiles_file)["deepseek-copy"]
+    copied: Profile = load_profiles(path=profiles_file)["deepseek-copy"]
     assert copied.variables["ANTHROPIC_BASE_URL"] == "https://api.deepseek.com/anthropic"
 
 
@@ -186,7 +186,7 @@ async def test_editing_a_variable_of_your_profile_saves_it_in_profiles_toml(
         app.screen.query_one(selector=Input).value = "deepseek-flash"
         await pilot.press("enter")
         await pilot.pause()
-    assert load_user_profiles(path=profiles_file)["mine"].variables["ANTHROPIC_MODEL"] == "deepseek-flash"
+    assert load_profiles(path=profiles_file)["mine"].variables["ANTHROPIC_MODEL"] == "deepseek-flash"
     assert not (tmp_path / "settings.json").exists()  # the file is not touched by a profile edit
 
 
@@ -204,12 +204,12 @@ async def test_removing_a_variable_of_your_profile_asks_first(tmp_path: Path, pr
         assert screen_name(app) == "ConfirmScreen"
         await pilot.press("n")
         await pilot.pause()
-        assert "API_TIMEOUT_MS" in load_user_profiles(path=profiles_file)["mine"].variables
+        assert "API_TIMEOUT_MS" in load_profiles(path=profiles_file)["mine"].variables
         await pilot.press("x")
         await pilot.pause()
         await pilot.press("y")
         await pilot.pause()
-    assert "API_TIMEOUT_MS" not in load_user_profiles(path=profiles_file)["mine"].variables
+    assert "API_TIMEOUT_MS" not in load_profiles(path=profiles_file)["mine"].variables
 
 
 async def test_invalid_value_in_a_profile_is_rejected(tmp_path: Path, profiles_file: Path) -> None:
@@ -225,7 +225,7 @@ async def test_invalid_value_in_a_profile_is_rejected(tmp_path: Path, profiles_f
         await pilot.press("enter")
         await pilot.pause()
         assert screen_name(app) == "EditScreen"  # still open, with an error
-    assert "ANTHROPIC_BASE_URL" not in load_user_profiles(path=profiles_file)["mine"].variables
+    assert "ANTHROPIC_BASE_URL" not in load_profiles(path=profiles_file)["mine"].variables
 
 
 async def test_verify_on_a_profile_page_uses_the_profile_endpoint(
@@ -467,7 +467,7 @@ async def test_s_saves_the_current_values_with_the_key(tmp_path: Path, profiles_
         await pilot.press("y")
         await pilot.pause()
         assert isinstance(app.screen, ProfileListPage) and "work-ds" in app.screen.names
-    assert load_user_profiles(path=profiles_file)["work-ds"].variables["ANTHROPIC_AUTH_TOKEN"] == "sk-1234567890abcd"
+    assert load_profiles(path=profiles_file)["work-ds"].variables["ANTHROPIC_AUTH_TOKEN"] == "sk-1234567890abcd"
 
 
 async def test_s_can_leave_the_key_out(tmp_path: Path, profiles_file: Path) -> None:
@@ -485,7 +485,7 @@ async def test_s_can_leave_the_key_out(tmp_path: Path, profiles_file: Path) -> N
         await pilot.pause()
         await pilot.press("n")
         await pilot.pause()
-    assert not load_user_profiles(path=profiles_file)["nokey"].has_key
+    assert not load_profiles(path=profiles_file)["nokey"].has_key
 
 
 async def test_save_refuses_a_built_in_or_bad_name(tmp_path: Path, profiles_file: Path) -> None:
@@ -501,27 +501,57 @@ async def test_save_refuses_a_built_in_or_bad_name(tmp_path: Path, profiles_file
             await pilot.pause()
             assert screen_name(app) == "InputScreen"
             assert text_of(app, "#error") != ""
-    assert not profiles_file.exists()
+    assert set(load_profiles(path=profiles_file)) == set(templates())  # nothing was added
 
 
-async def test_x_deletes_your_profile_after_a_yes_and_not_a_built_in(tmp_path: Path, profiles_file: Path) -> None:
+async def test_x_deletes_any_profile_after_a_yes(tmp_path: Path, profiles_file: Path) -> None:
     save_profile(profile=Profile(name="mine", variables={"ANTHROPIC_MODEL": "m"}), path=profiles_file)
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
+        for name in ("mine", "deepseek"):
+            await move_to_profile(app, pilot, name)
+            await pilot.press("x")
+            await pilot.pause()
+            assert screen_name(app) == "ConfirmScreen"
+            await pilot.press("n" if name == "deepseek" else "y")
+            await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage)
+        assert "mine" not in app.screen.names and "deepseek" in app.screen.names
+    assert "mine" not in load_profiles(path=profiles_file)
+
+
+async def test_r_renames_a_profile_and_keeps_the_cursor_on_it(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
         await move_to_profile(app, pilot, "deepseek")
-        await pilot.press("x")
+        await pilot.press("r")
         await pilot.pause()
-        assert isinstance(app.screen, ProfileListPage)  # no dialog for a built-in
-        assert "built-in" in text_of(app, "#status")
-        await move_to_profile(app, pilot, "mine")
-        await pilot.press("x")
+        assert screen_name(app) == "InputScreen"
+        app.screen.query_one(selector=Input).value = "work-ds"
+        await pilot.press("enter")
         await pilot.pause()
-        assert screen_name(app) == "ConfirmScreen"
-        await pilot.press("y")
+        assert isinstance(app.screen, ProfileListPage)
+        assert "work-ds" in app.screen.names and "deepseek" not in app.screen.names
+        assert app.screen.selected_name() == "work-ds"
+    assert "work-ds" in load_profiles(path=profiles_file)
+
+
+async def test_rename_refuses_an_existing_or_invalid_name(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
         await pilot.pause()
-        assert isinstance(app.screen, ProfileListPage) and "mine" not in app.screen.names
-    assert "mine" not in load_user_profiles(path=profiles_file)
+        await move_to_profile(app, pilot, "deepseek")
+        await pilot.press("r")
+        await pilot.pause()
+        for bad in ("openrouter", "has space"):
+            app.screen.query_one(selector=Input).value = bad
+            await pilot.press("enter")
+            await pilot.pause()
+            assert screen_name(app) == "InputScreen"
+            assert text_of(app, "#error") != ""
+    assert "deepseek" in load_profiles(path=profiles_file)
 
 
 # -- target ------------------------------------------------------------------

@@ -69,7 +69,7 @@ claude-code-env-editor help set
 
 The TUI has two pages.
 
-**Profile list (main page).** It shows the built-in profiles and yours. A `*` marks the profile that matches the file.
+**Profile list (main page).** It shows your profiles. A `*` marks the profile that matches the file.
 The banner names that profile, or says that the file has its own values.
 
 | Key | Action |
@@ -79,7 +79,8 @@ The banner names that profile, or says that the file has its own values.
 | `m` | Apply in merge mode |
 | `c` | Open the current values of the file |
 | `s` | Save the current values of the file as a profile |
-| `x` | Delete one of your profiles (asks first) |
+| `r` | Rename the profile |
+| `x` | Delete the profile (asks first) |
 | `d` | Switch the config directory, or open another settings file |
 | `v` | Verify the endpoint of the file |
 | `?` / `q` | Help / quit |
@@ -88,7 +89,7 @@ The banner names that profile, or says that the file has its own values.
 
 | Key | Action |
 |---|---|
-| `e` / `enter` | Edit the selected variable. In a profile of yours the change goes to `profiles.toml`. A built-in profile is read-only |
+| `e` / `enter` | Edit the selected variable. In a profile the change goes to `profiles.toml` |
 | `x` | Remove the variable (asks first) |
 | `r` | Reveal or hide secrets |
 | `a` / `m` | On a profile: apply it to the file (replace or merge) |
@@ -100,14 +101,17 @@ The banner names that profile, or says that the file has its own values.
 ## Profiles
 
 A profile is a name and a set of known variables, for example the base URL, the model aliases, and the key.
-Built-in profiles come from the presets and are read-only. Your own profiles live in `profiles.toml`
-in the config directory of this tool (`dirs.toml` is there too).
+All profiles live in `profiles.toml` in the config directory of this tool (`dirs.toml` is there too).
+The first time that you use the tool, it copies the [templates](#templates) into that file. From then on they are
+normal profiles: edit, rename, or delete them.
 
 ```sh
-claude-code-env-editor profile                      # list built-in profiles and yours
+claude-code-env-editor profile                      # list your profiles
 claude-code-env-editor profile show deepseek        # print the variables (keys masked, --reveal shows them)
 claude-code-env-editor profile save work-ds         # save the current values of the target
-claude-code-env-editor profile save mine --from deepseek --note "my copy"
+claude-code-env-editor profile save mine --from deepseek --note "my copy"   # copy a profile or a template
+claude-code-env-editor profile rename mine work-ds  # new name, same variables
+claude-code-env-editor profile templates            # the templates that ship with the tool
 claude-code-env-editor profile save shared --no-key # leave the key out
 claude-code-env-editor profile delete work-ds       # asks first, or use --yes
 ```
@@ -144,7 +148,7 @@ says why. The CLI option `--allow-secret-in-shared-file` is the only way to over
 
 ### Manage profiles
 
-- A name has letters, digits, `.`, `-`, and `_`. A built-in name cannot be replaced.
+- A name has letters, digits, `.`, `-`, and `_`. A name that exists is refused (`save --force` replaces it).
 - Only variables that the tool knows are allowed. A profiles file cannot set `PATH` or `LD_PRELOAD`.
 - **A profile can hold a key.** `profiles.toml` is written with mode `0600`, in a directory with mode `0700`,
   and a `.gitignore` lists it. It is a second plaintext copy of the key, as exposed as `settings.json`.
@@ -175,11 +179,11 @@ A hidden variable stays visible when it has a value, with a warning in the banne
 
 The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.
 
-**Profiles (main page).** The built-in profiles and yours. `*` marks the profile that the file matches. The banner names it.
+**Profiles (main page).** Your profiles. `*` marks the profile that the file matches. The banner names it.
 
 ![Profile list](docs/screenshots/home.svg)
 
-**One profile.** Enter opens a profile and shows its variables. A profile of yours can be edited. A built-in is read-only.
+**One profile.** Enter opens a profile and shows its variables. You can edit them.
 
 ![Variables of one profile](docs/screenshots/profile.svg)
 
@@ -222,12 +226,18 @@ in the `env` block overrides `ANTHROPIC_MODEL` exported in the shell. When the s
 shows `settings (shell differs)`. Claude Code ignores the shell value.
 It writes only the `env` block. All other keys in the file stay as they were.
 
-## Built-in profiles
+## Templates
 
-`claude-code-env-editor profile` lists them: Anthropic, OpenRouter, Z.ai, Moonshot, DeepSeek,
-LiteLLM, Ollama. **Check each URL and model name before you rely on it. Providers change them.**
-The DeepSeek profile sets the base URL, all model aliases, the subagent model, the effort level, and the
-compact window. A built-in profile never holds a key. The older `preset` command is an alias that merges.
+The tool ships with templates for Anthropic, OpenRouter, Z.ai, Moonshot, DeepSeek, LiteLLM, and Ollama.
+`claude-code-env-editor profile templates` lists them. **Check each URL and model name before you rely on one.
+Providers change them.** The DeepSeek template sets the base URL, all model aliases, the subagent model, the
+effort level, and the compact window. A template never holds a key.
+
+- **First use.** The templates are copied into your `profiles.toml` as normal profiles. A marker in the file stops a
+  second copy, so a profile that you delete stays deleted. A file from an older version gets only the templates
+  that it does not have yet. A profile with a template's name is never replaced.
+- **Get one back.** `profile save deepseek --from deepseek` copies the template again, when the name is free.
+- The older `preset` command still works. It merges a template or a profile into the file.
 
 ## Several Claude Code logins
 
