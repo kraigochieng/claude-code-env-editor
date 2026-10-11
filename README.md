@@ -20,7 +20,7 @@ This tool gives you:
 
 - **Profiles.** One profile sets the base URL, the model aliases, the key, and the other variables together.
   Applying a profile removes the values of the previous endpoint, so no stale model name or key stays behind.
-- **Verify.** It checks the URL, the key, and the model name before you start a session, and explains a failure.
+- **Verify.** It checks the URL, the key, the model name, and the tool definitions before you start a session, and explains a failure.
 - **The right key variable.** It shows `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` based on the base URL.
 - **Safe editing.** It validates values, masks secrets, and writes the file atomically with mode `0600`.
 - **Several logins.** It finds and switches config directories.
@@ -76,7 +76,7 @@ The TUI has two pages. Neither page shows a file or a config directory. A folder
 | `right arrow` / `enter` | Open the profile and see its variables |
 | `a` | Apply the profile. You choose the place, then review the changes |
 | `c` | Copy the profile under a new name |
-| `v` | Verify the endpoint, the key, and the model of the profile |
+| `v` | Verify the endpoint, the key, the model, and the tool definitions of the profile |
 | `n` | New profile from scratch: type a name, then set its variables |
 | `e` | Edit the name of the profile |
 | `x` | Delete the profile (asks first) |
@@ -220,9 +220,9 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 ![Edit dialog for one variable](docs/screenshots/edit.svg)
 
-**Verify.** Press `v` to check the URL, the key, and the model name.
+**Verify.** Press `v` to check the URL, the key, the model name, and the tool definitions.
 
-![Verify result with three passed checks](docs/screenshots/verify.svg)
+![Verify result with four passed checks](docs/screenshots/verify.svg)
 
 **Help.** Press `?` to list the keys.
 
@@ -301,9 +301,20 @@ Run `claude-code-env-editor dirs` to list them. In the TUI, `a` on a profile lis
 
 ## Verify
 
-Verify runs three checks: the URL, `GET /v1/models` (proves the key), and a one-token
-`POST /v1/messages` (proves the model name). A `[1m]` suffix is removed from the model name before the request.
+Verify runs four checks:
+
+- **url:** the base URL is a valid `http` or `https` URL.
+- **key:** `GET /v1/models` (proves the key on endpoints that protect the list).
+- **model:** a one-token `POST /v1/messages` (proves the model name).
+- **tools:** two more one-token requests that carry a tool definition. Claude Code sends tools with every
+  request. The first tool is plain. The second tool has the pattern `^[^\0]*$` in a field, as the `Artifact`
+  tool of Claude Code has. Some endpoints reject this pattern, and Claude Code then fails with
+  `API Error: 400 Invalid schema for function 'Artifact'`. Start Claude Code with `--disallowedTools Artifact`,
+  or add `Artifact` to `permissions.deny` in `settings.json`, to remove the tool.
+
+A `[1m]` suffix is removed from the model name before the requests.
 A `404` on `/v1/models` is shown as `skip`, because some providers have no such route.
+The tools check runs only after the model check passes.
 
 ## Versions
 

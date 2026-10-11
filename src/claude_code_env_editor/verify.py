@@ -16,6 +16,8 @@ PASS: Final = "pass"
 FAIL: Final = "fail"
 SKIP: Final = "skip"
 _SUFFIX: Final[re.Pattern[str]] = re.compile(r"\[[^\]]*\]$")
+# The pattern in the file_paths field of the Artifact tool of Claude Code. Some endpoints reject it.
+TOOL_PATTERN: Final[str] = "^[^\\0]*$"
 
 
 class Check(BaseModel):
@@ -116,6 +118,8 @@ def verify(
 ) -> list[Check]:
     """Run the checks in order. Stop after a failure that makes later checks useless.
 
+    The last check sends tool definitions, because Claude Code sends them with every request.
+
     The request goes only to the endpoint URL. The client never follows a redirect.
     Without a key, the result depends on the endpoint: the Anthropic API uses the Claude login
     (skip), a local endpoint gets an unauthenticated request, and any other endpoint fails.
@@ -161,7 +165,10 @@ def verify(
                 )
             )
         else:
-            checks.append(_check_message(client=http_client, endpoint=endpoint, models=models, timeout=timeout))
+            model_check: Check = _check_message(client=http_client, endpoint=endpoint, models=models, timeout=timeout)
+            checks.append(model_check)
+            if model_check.status == PASS:
+                checks.append(_check_tools(client=http_client, endpoint=endpoint, timeout=timeout))
     finally:
         if own_client:
             http_client.close()
@@ -307,3 +314,63 @@ def _check_message(client: httpx.Client, endpoint: Endpoint, models: ModelList, 
         name = requested_model
     sent_note: str = f" (sent as '{requested_model}')" if requested_model != endpoint.model else ""
     return Check(name="model", status=PASS, detail=f"{name} answered in {ms} ms{sent_note}")
+
+
+def _tool_probe_body(model: str, pattern: str | None) -> dict[str, object]:
+    """Build a one-token request with one tool. The tool has the pattern in a field when pattern is given."""
+    item: dict[str, object] = {"type": "string"}
+    if pattern is not None:
+        item["pattern"] = pattern
+    return {
+        "model": model,
+        "max_tokens": 1,
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [
+            {
+                "name": "probe",
+                "description": "A tool that only tests the schema.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"file_paths": {"type": "array", "items": item}},
+                },
+            }
+        ],
+    }
+
+
+def _check_tools(client: httpx.Client, endpoint: Endpoint, timeout: float) -> Check:
+    """Check that the endpoint accepts tool definitions, also the pattern that the Artifact tool uses."""
+    requested_model: str = strip_model_suffix(model=endpoint.model)
+    for pattern in (None, TOOL_PATTERN):
+        try:
+            resp: httpx.Response = client.post(
+                url=f"{endpoint.base_url}/v1/messages",
+                headers=endpoint.headers,
+                json=_tool_probe_body(model=requested_model, pattern=pattern),
+            )
+        except httpx.HTTPError as exc:
+            return Check(name="tools", status=FAIL, detail=describe_exception(exc=exc, endpoint=endpoint, timeout=timeout))
+        code: int = resp.status_code
+        if code < 400:
+            continue
+        if code not in (400, 404, 422):
+            return Check(name="tools", status=FAIL, detail=_explain_status(code=code, resp=resp, endpoint=endpoint))
+        message: str = provider_message(resp=resp, endpoint=endpoint)
+        if pattern is None:
+            detail: str = (
+                f"HTTP {code}: the endpoint rejects tool definitions. Claude Code sends tools with every request, "
+                f"so it cannot work with this endpoint. {message}"
+            )
+        else:
+            detail = (
+                f"HTTP {code}: the endpoint rejects the pattern {TOOL_PATTERN} in a tool schema. "
+                "The Artifact tool of Claude Code uses it, so every request fails with this error. "
+                "Remove the tool: start Claude Code with --disallowedTools Artifact, "
+                f"or add Artifact to permissions.deny in settings.json. {message}"
+            )
+        return Check(name="tools", status=FAIL, detail=detail.strip())
+    return Check(
+        name="tools",
+        status=PASS,
+        detail="the endpoint accepts tool definitions, also the pattern that the Artifact tool uses",
+    )
