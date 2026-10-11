@@ -1,6 +1,22 @@
 # CHANGELOG
 
 
+## v0.16.0 (2026-10-11)
+
+### Features
+
+- **tui**: Keep actions on the profile list, edit the name, style key hints, close on outside click
+  ([`b766244`](https://github.com/kraigochieng/claude-code-env-editor/commit/b766244b09f32ec10245fd38bbc215c2d7181baa))
+
+Apply, merge, copy, and verify are keys and instructions of the profile list only. The profile page
+  has edit, remove, back, help, and quit. The list has c to copy and e to edit the name, and r is
+  gone. The keys in the hint lines of every dialog and in the help use the colour of the footer
+  keys. A click outside a dialog closes it like Esc, and a confirm dialog answers no. README and
+  screenshots follow.
+
+Closes #70
+
+
 ## v0.15.0 (2026-10-11)
 
 ### Features
