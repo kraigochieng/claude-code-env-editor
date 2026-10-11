@@ -63,20 +63,39 @@ claude-code-env-editor export   # 'export NAME=value' lines
 claude-code-env-editor help set
 ```
 
-`cce` is a short alias. Inside the TUI press `?` for the key list.
+`cce` is a short alias. The TUI opens on the list of profiles. Press `?` for the keys of the page.
 
 **Paste a key with `Ctrl+Shift+V`.** A terminal does not use `Ctrl+V`. On macOS use `Cmd+V`. This works in the value box of the edit dialog.
 
+The TUI has two pages.
+
+**Profile list (main page).** It shows the built-in profiles and yours. A `*` marks the profile that matches the file.
+The banner names that profile, or says that the file has its own values.
+
 | Key | Action |
 |---|---|
-| `e` / `enter` | Edit the selected variable |
-| `v` | Verify the endpoint, the key, and the model |
-| `r` | Reveal or hide secrets |
-| `p` | Profiles: apply, save the current values, delete |
-| `d` | Switch config directory, or open another settings file |
+| `enter` | Open the profile and see its variables |
+| `a` | Apply the profile to the file (replace mode). A dialog shows every change first |
+| `m` | Apply in merge mode |
+| `c` | Open the current values of the file |
+| `s` | Save the current values of the file as a profile |
+| `x` | Delete one of your profiles (asks first) |
+| `d` | Switch the config directory, or open another settings file |
+| `v` | Verify the endpoint of the file |
+| `?` / `q` | Help / quit |
+
+**Variables page (a profile, or the current file).** It shows the variables and where each value comes from.
+
+| Key | Action |
+|---|---|
+| `e` / `enter` | Edit the selected variable. In a profile of yours the change goes to `profiles.toml`. A built-in profile is read-only |
 | `x` | Remove the variable (asks first) |
-| `?` | Help |
-| `q` | Quit |
+| `r` | Reveal or hide secrets |
+| `a` / `m` | On a profile: apply it to the file (replace or merge) |
+| `c` | On a profile: copy it under a new name, then edit the copy |
+| `s` | On the current file: save its values as a profile |
+| `v` | Verify the endpoint, the key, and the model of the page |
+| `esc` | Back to the profile list |
 
 ## Profiles
 
@@ -119,17 +138,9 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
 
 ### Profiles in the TUI
 
-Press `p` for the profile list. The list names the target file at the top.
-
-| Key | Action |
-|---|---|
-| `enter` | Apply in replace mode. A dialog first shows every change, with secrets masked. |
-| `m` | Apply in merge mode |
-| `s` | Save the current values as a new profile. The tool asks for a name and, when a key is set, asks if the key goes into the profile. |
-| `x` | Delete one of your profiles (asks first) |
-
-A profile with a key is refused for a file that may be committed. The dialog says why.
-The CLI option `--allow-secret-in-shared-file` is the only way to override that.
+The profile list is the main page. `a` on a row applies that profile. The dialog lists every change, with secrets
+masked, and writes only after a yes. A profile with a key is refused for a file that may be committed. The dialog
+says why. The CLI option `--allow-secret-in-shared-file` is the only way to override that.
 
 ### Manage profiles
 
@@ -164,21 +175,25 @@ A hidden variable stays visible when it has a value, with a warning in the banne
 
 The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.
 
-**Home.** Each variable with its value and source. Secrets show masked.
+**Profiles (main page).** The built-in profiles and yours. `*` marks the profile that the file matches. The banner names it.
 
-![Home page with the variable table](docs/screenshots/home.svg)
+![Profile list](docs/screenshots/home.svg)
 
-**Edit.** Press `e` on a variable to change it. Paste with `Ctrl+Shift+V`. An empty value removes the key.
+**One profile.** Enter opens a profile and shows its variables. A profile of yours can be edited. A built-in is read-only.
 
-![Edit dialog for one variable](docs/screenshots/edit.svg)
+![Variables of one profile](docs/screenshots/profile.svg)
 
-**Profiles.** Press `p` to apply a profile, save the current values, or delete a profile.
-
-![Profile list](docs/screenshots/profiles.svg)
-
-**Apply.** Enter shows every change before it writes. Secrets are masked. A key of another endpoint is removed.
+**Apply.** `a` shows every change before it writes. Secrets are masked. A key of another endpoint is removed.
 
 ![Apply dialog with the changes](docs/screenshots/apply.svg)
+
+**Current file.** `c` shows what Claude Code reads now, and where each value comes from.
+
+![Variables of the current file](docs/screenshots/current.svg)
+
+**Edit.** `e` on a variable. Paste with `Ctrl+Shift+V`. An empty value removes the variable.
+
+![Edit dialog for one variable](docs/screenshots/edit.svg)
 
 **Verify.** Press `v` to check the URL, the key, and the model name.
 
