@@ -112,12 +112,14 @@ def profiles_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return path
 
 
-def test_profile_list_shows_builtin_profiles(
+def test_profile_list_shows_the_seeded_templates_without_a_kind(
     profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert run(["profile"], tmp_path, monkeypatch) == 0
     out: str = capsys.readouterr().out
-    assert "deepseek" in out and "built-in" in out and "api.deepseek.com" in out
+    assert "deepseek" in out and "api.deepseek.com" in out
+    assert "built-in" not in out and "yours" not in out
+    assert profiles_file.exists()  # the first use copied the templates in
 
 
 def test_profile_save_show_masks_the_key_and_delete(
@@ -140,7 +142,7 @@ def test_profile_save_show_masks_the_key_and_delete(
     assert run(["profile", "show", "work"], tmp_path, monkeypatch) == 1
 
 
-def test_profile_save_without_key_and_copy_of_a_builtin(
+def test_profile_save_without_key_and_copy_of_a_template(
     profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert run(["profile", "save", "mine", "--from", "deepseek", "--note", "my copy"], tmp_path, monkeypatch) == 0
@@ -161,7 +163,31 @@ def test_profile_delete_needs_yes_without_a_terminal(
 ) -> None:
     assert run(["profile", "save", "mine", "--from", "deepseek"], tmp_path, monkeypatch) == 0
     assert run(["profile", "delete", "mine"], tmp_path, monkeypatch) == 1
-    assert run(["profile", "delete", "deepseek", "--yes"], tmp_path, monkeypatch) == 2
+    assert run(["profile", "delete", "mine", "--yes"], tmp_path, monkeypatch) == 0
+
+
+def test_a_template_profile_can_be_deleted_and_added_again_from_the_template(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["profile", "delete", "deepseek", "--yes"], tmp_path, monkeypatch) == 0
+    capsys.readouterr()
+    assert run(["profile"], tmp_path, monkeypatch) == 0
+    assert "deepseek" not in capsys.readouterr().out.split()
+    assert run(["profile", "templates"], tmp_path, monkeypatch) == 0
+    assert "deepseek" in capsys.readouterr().out
+    assert run(["profile", "save", "deepseek", "--from", "deepseek"], tmp_path, monkeypatch) == 0
+    assert run(["profile", "show", "deepseek"], tmp_path, monkeypatch) == 0
+
+
+def test_profile_rename(
+    profiles_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["profile", "rename", "deepseek", "work-ds"], tmp_path, monkeypatch) == 0
+    assert "Renamed profile 'deepseek' to 'work-ds'." in capsys.readouterr().out
+    assert run(["profile", "show", "work-ds"], tmp_path, monkeypatch) == 0
+    assert run(["profile", "show", "deepseek"], tmp_path, monkeypatch) == 1
+    assert run(["profile", "rename", "work-ds", "openrouter"], tmp_path, monkeypatch) == 1  # name exists
+    assert run(["profile", "rename", "work-ds"], tmp_path, monkeypatch) == 2  # new name missing
 
 
 DEEPSEEK_SETTINGS: dict[str, dict[str, str]] = {

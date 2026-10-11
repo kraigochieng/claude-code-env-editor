@@ -30,11 +30,10 @@ from claude_code_env_editor.profiles import (
     NAME_PATTERN,
     Profile,
     ProfileError,
-    all_profiles,
-    builtin_profiles,
     delete_profile,
     get_profile,
-    load_user_profiles,
+    load_profiles,
+    rename_profile,
     save_profile,
     snapshot,
 )
@@ -146,7 +145,7 @@ class BasePage(Screen[None]):
     def file_profile_line(self, env: Mapping[str, str]) -> str:
         """Return the banner text about which profile the target file matches."""
         try:
-            match: Profile | None = matching_profile(env=env, profiles=all_profiles())
+            match: Profile | None = matching_profile(env=env, profiles=load_profiles())
         except ProfileError:
             return "unknown (profiles.toml cannot be read)"
         if match is not None:
@@ -212,7 +211,7 @@ class BasePage(Screen[None]):
         """Ask for a name, then for the key question, then save the file's values as a profile."""
         env: dict[str, str] = self.file_env()
         try:
-            existing: set[str] = set(load_user_profiles())
+            existing: set[str] = set(load_profiles())
         except ProfileError as exc:
             self.set_status(message=str(exc), error=True)
             return
@@ -220,14 +219,11 @@ class BasePage(Screen[None]):
         if not known:
             self.set_status(message="There are no known variables to save. Set some first.", error=True)
             return
-        builtin_names: set[str] = set(builtin_profiles())
 
         def check_name(text: str) -> str | None:
             """Return a message when the name is not usable."""
             if not NAME_PATTERN.match(text):
                 return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in builtin_names:
-                return f"'{text}' is a built-in profile. Use another name."
             if text in existing:
                 return f"A profile named '{text}' exists. Use another name, or delete it first."
             return None
@@ -276,9 +272,6 @@ class BasePage(Screen[None]):
 
     def start_delete(self, name: str) -> None:
         """Ask, then delete one of your profiles."""
-        if name in builtin_profiles():
-            self.set_status(message=f"'{name}' is a built-in profile and cannot be deleted.", error=True)
-            return
 
         def delete_when_confirmed(confirmed: bool | None) -> None:
             """Delete the profile only after a yes."""
@@ -296,7 +289,7 @@ class BasePage(Screen[None]):
         self.app.push_screen(
             screen=ConfirmScreen(
                 title="Delete profile",
-                question=f"Delete your profile '{name}'? The settings file is not changed.",
+                question=f"Delete profile '{name}'? No settings file is changed.",
                 hint="",
             ),
             callback=delete_when_confirmed,
@@ -413,6 +406,7 @@ class ProfileListPage(BasePage):
         Binding(key="m", action="merge", description="merge"),
         Binding(key="c", action="current", description="current file"),
         Binding(key="s", action="save", description="save"),
+        Binding(key="r", action="rename", description="rename"),
         Binding(key="x", action="delete", description="delete"),
         Binding(key="d", action="switch_dir", description="file"),
         Binding(key="v", action="verify", description="verify"),
@@ -429,7 +423,7 @@ class ProfileListPage(BasePage):
 
     def columns(self) -> tuple[str, ...]:
         """Return the column titles."""
-        return ("Profile", "Kind", "Endpoint", "Key", "Note")
+        return ("Profile", "Endpoint", "Key", "Note")
 
     def start_message(self) -> str:
         """Return the first status text."""
@@ -443,7 +437,8 @@ class ProfileListPage(BasePage):
             ("m", "Apply the profile in merge mode"),
             ("c", "Open the current values of the file"),
             ("s", "Save the current values of the file as a profile"),
-            ("x", "Delete one of your profiles"),
+            ("r", "Rename the profile"),
+            ("x", "Delete the profile"),
             ("d", "Switch the config directory, or open another settings file"),
             ("v", "Verify the endpoint of the file"),
             ("?", "Show this help"),
@@ -466,9 +461,9 @@ class ProfileListPage(BasePage):
         """Read the profiles and the file again, and redraw the list and the banner."""
         keep: str | None = self.selected_name()
         try:
-            self.profiles = all_profiles()
+            self.profiles = load_profiles()
         except ProfileError as exc:
-            self.profiles = builtin_profiles()
+            self.profiles = {}
             self.set_status(message=str(exc), error=True)
         env: dict[str, str] = self.file_env()
         self.active = matching_profile(env=env, profiles=self.profiles)
@@ -479,7 +474,6 @@ class ProfileListPage(BasePage):
             mark: str = " *" if self.active is not None and profile.name == self.active.name else ""
             table.add_row(
                 Text(text=f"{profile.name}{mark}", style="bold"),
-                Text(text="built-in" if profile.builtin else "yours", style="dim" if profile.builtin else ""),
                 Text(text=profile.host),
                 Text(text="key" if profile.has_key else "no key", style="" if profile.has_key else "dim"),
                 Text(text=profile.note, style="dim"),
@@ -522,10 +516,50 @@ class ProfileListPage(BasePage):
         self.start_save()
 
     def action_delete(self) -> None:
-        """Delete the profile under the cursor, when it is one of yours."""
+        """Delete the profile under the cursor."""
         name: str | None = self.selected_name()
         if name is not None:
             self.start_delete(name=name)
+
+    def action_rename(self) -> None:
+        """Ask for a new name for the profile under the cursor."""
+        name: str | None = self.selected_name()
+        if name is None:
+            return
+        existing: set[str] = set(self.profiles)
+
+        def check_name(text: str) -> str | None:
+            """Return a message when the new name is not usable."""
+            if not NAME_PATTERN.match(text):
+                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
+            if text != name and text in existing:
+                return f"A profile named '{text}' exists. Use another name."
+            return None
+
+        def rename_to(new_name: str | None) -> None:
+            """Rename the profile and keep the cursor on it."""
+            if not new_name or new_name == name:
+                return
+            try:
+                rename_profile(old=name, new=new_name)
+            except ProfileError as exc:
+                self.set_status(message=str(exc), error=True)
+                return
+            self.refresh_page()
+            table: DataTable[Text] = self.query_one(selector=DataTable)
+            if new_name in self.names:
+                table.move_cursor(row=self.names.index(new_name))
+            self.set_status(message=f"Renamed '{name}' to '{new_name}'.")
+
+        self.app.push_screen(
+            screen=InputScreen(
+                title=f"Rename profile '{name}'",
+                prompt="New name",
+                check=check_name,
+                placeholder=name,
+            ),
+            callback=rename_to,
+        )
 
 
 class VariablesPage(BasePage):
@@ -566,8 +600,6 @@ class VariablesPage(BasePage):
 
     def start_message(self) -> str:
         """Return the first status text."""
-        if not self.source.editable:
-            return "Built-in profiles are read-only. Press c to copy it as a profile of yours."
         return "Press e to edit. Paste with Ctrl+Shift+V. Press ? for help."
 
     def help_keys(self) -> list[tuple[str, str]]:
@@ -631,8 +663,7 @@ class VariablesPage(BasePage):
         if is_file:
             profile_line: str = self.file_profile_line(env=values)
         else:
-            kind: str = "built-in, read-only" if not self.source.editable else "yours"
-            profile_line = f"{self.source.name} ({kind})"
+            profile_line = self.source.name
         self.draw_banner(profile_line=profile_line, rows=self.rows)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -668,11 +699,6 @@ class VariablesPage(BasePage):
         row: Row | None = self.selected()
         if row is None:
             return
-        if not self.source.editable:
-            self.set_status(
-                message="Built-in profiles are read-only. Press c to copy it as a profile of yours.", error=True
-            )
-            return
 
         def save_edited_value(value: str | None) -> None:
             """Save the new value. An empty value removes the variable."""
@@ -704,9 +730,6 @@ class VariablesPage(BasePage):
         """Remove the selected variable after a yes."""
         row: Row | None = self.selected()
         if row is None or row.source == SOURCE_UNSET:
-            return
-        if not self.source.editable:
-            self.set_status(message="Built-in profiles are read-only. Press c to copy it first.", error=True)
             return
         if row.source == SOURCE_ENV:
             self.set_status(
@@ -751,9 +774,8 @@ class VariablesPage(BasePage):
         if not isinstance(self.source, ProfileSource):
             return
         original: Profile = self.source.profile
-        builtin_names: set[str] = set(builtin_profiles())
         try:
-            existing: set[str] = set(load_user_profiles())
+            existing: set[str] = set(load_profiles())
         except ProfileError as exc:
             self.set_status(message=str(exc), error=True)
             return
@@ -762,7 +784,7 @@ class VariablesPage(BasePage):
             """Return a message when the name is not usable."""
             if not NAME_PATTERN.match(text):
                 return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in builtin_names or text in existing:
+            if text in existing:
                 return f"A profile named '{text}' exists. Use another name."
             return None
 

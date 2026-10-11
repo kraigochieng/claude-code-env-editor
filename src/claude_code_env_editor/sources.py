@@ -59,7 +59,7 @@ class FileSource(VariableSource):
 
 
 class ProfileSource(VariableSource):
-    """The variables of one profile. A built-in profile is read-only."""
+    """The variables of one profile. Every profile can be edited."""
 
     kind: SourceKind = "profile"
 
@@ -70,8 +70,8 @@ class ProfileSource(VariableSource):
 
     @property
     def editable(self) -> bool:
-        """Only a profile of the user can be edited."""
-        return not self.profile.builtin
+        """Every profile can be edited."""
+        return True
 
     def load(self) -> dict[str, str]:
         """Return the variables of the profile."""
@@ -93,11 +93,10 @@ class ProfileSource(VariableSource):
 def matching_profile(env: Mapping[str, str], profiles: Mapping[str, Profile]) -> Profile | None:
     """Return the profile whose variables equal the known variables of env, or None.
 
-    A profile of the user wins over a built-in one. An env block without known variables matches nothing.
+    The first match in the order of the profiles wins. An env block without known variables matches nothing.
     """
     known: dict[str, str] = {name: value for name, value in env.items() if name in BY_NAME}
     if not known:
         return None
     matches: list[Profile] = [profile for profile in profiles.values() if profile.variables == known]
-    matches.sort(key=lambda profile: profile.builtin)
     return matches[0] if matches else None

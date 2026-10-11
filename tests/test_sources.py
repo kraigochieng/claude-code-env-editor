@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from claude_code_env_editor.profiles import Profile, load_user_profiles, save_profile
+from claude_code_env_editor.profiles import Profile, load_profiles, save_profile
 from claude_code_env_editor.sources import FileSource, ProfileSource, matching_profile
 
 VARS: dict[str, str] = {
@@ -23,9 +23,9 @@ def test_file_source_loads_and_saves_the_env_block(tmp_path: Path) -> None:
     assert data == {"theme": "dark", "env": {"B": "2"}}
 
 
-def test_profile_source_of_a_builtin_is_read_only() -> None:
-    source: ProfileSource = ProfileSource(profile=Profile(name="b", variables=VARS, builtin=True))
-    assert source.kind == "profile" and not source.editable
+def test_profile_source_is_editable() -> None:
+    source: ProfileSource = ProfileSource(profile=Profile(name="b", variables=VARS))
+    assert source.kind == "profile" and source.editable
     assert source.load() == VARS
 
 
@@ -36,7 +36,7 @@ def test_profile_source_saves_changes_to_profiles_toml(tmp_path: Path, monkeypat
     save_profile(profile=profile, path=path)
     source: ProfileSource = ProfileSource(profile=profile)
     source.save(updates={"ANTHROPIC_MODEL": "deepseek-v4-pro", "ANTHROPIC_BASE_URL": None})
-    saved: Profile = load_user_profiles(path=path)["mine"]
+    saved: Profile = load_profiles(path=path)["mine"]
     assert saved.variables == {"ANTHROPIC_MODEL": "deepseek-v4-pro"} and saved.note == "n"
     assert source.load() == {"ANTHROPIC_MODEL": "deepseek-v4-pro"}
 
@@ -58,13 +58,13 @@ def test_matching_profile_compares_known_variables_only() -> None:
     assert matching_profile(env={**VARS, "ANTHROPIC_MODEL": "other"}, profiles=profiles) is None
 
 
-def test_matching_profile_prefers_yours_over_a_builtin() -> None:
+def test_matching_profile_takes_the_first_match_in_list_order() -> None:
     profiles: dict[str, Profile] = {
-        "builtin": Profile(name="builtin", variables=VARS, builtin=True),
-        "mine": Profile(name="mine", variables=VARS),
+        "first": Profile(name="first", variables=VARS),
+        "second": Profile(name="second", variables=VARS),
     }
     found: Profile | None = matching_profile(env=VARS, profiles=profiles)
-    assert found is not None and found.name == "mine"
+    assert found is not None and found.name == "first"
 
 
 def test_empty_env_matches_nothing() -> None:

@@ -33,11 +33,13 @@ from claude_code_env_editor.presets import Preset, load_presets
 from claude_code_env_editor.profiles import (
     Profile,
     ProfileError,
-    all_profiles,
     delete_profile,
     get_profile,
+    load_profiles,
+    rename_profile,
     save_profile,
     snapshot,
+    templates,
 )
 from claude_code_env_editor.registry import (
     add_to_registry,
@@ -138,13 +140,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add_command(
         name="profile",
-        help_="List, show, save, apply, or delete profiles (named sets of variables).",
-        example=f"{PROG} profile apply deepseek --file .claude/settings.local.json",
+        help_="List, show, save, apply, rename, or delete profiles (named sets of variables).",
+        example=f"{PROG} profile rename deepseek work-deepseek",
     )
     _add_dir(p=p)
-    p.add_argument("action", nargs="?", choices=["list", "show", "save", "apply", "delete"], default="list")
-    p.add_argument("name", nargs="?", help="Profile name for show, save, apply, or delete.")
-    p.add_argument("--from", dest="source", metavar="PROFILE", help="With save: copy this profile (built-in or yours).")
+    p.add_argument("action", nargs="?", choices=["list", "show", "save", "apply", "rename", "delete", "templates"],
+        default="list",
+    )
+    p.add_argument("name", nargs="?", help="Profile name for show, save, apply, rename, or delete.")
+    p.add_argument("new_name", nargs="?", help="With rename: the new name.")
+    p.add_argument(
+        "--from",
+        dest="source",
+        metavar="PROFILE",
+        help="With save: copy this profile, or a template (see 'profile templates').",
+    )
     p.add_argument("--no-key", action="store_true", help="With save: leave the key out of the profile.")
     p.add_argument("--note", default="", help="With save: a note to store with the profile.")
     p.add_argument("--force", action="store_true", help="With save: replace a profile of the same name.")
@@ -240,7 +250,7 @@ def cmd_preset(args: argparse.Namespace) -> int:
             print(f"{pid:<12} {preset.label:<24} {preset.base_url}")
         return 0
     try:
-        preset_profile: Profile = get_profile(name=args.name)
+        preset_profile: Profile = get_profile(name=args.name, include_templates=True)
     except ProfileError as exc:
         print(exc, file=sys.stderr)
         return 2
@@ -345,26 +355,26 @@ def _apply(
 
 
 def cmd_profile(args: argparse.Namespace) -> int:
-    """List, show, save, or delete profiles."""
-    if args.action == "list":
-        for entry in all_profiles().values():
-            kind: str = "built-in" if entry.builtin else "yours"
+    """List, show, save, apply, rename, or delete profiles."""
+    if args.action in ("list", "templates"):
+        shown: dict[str, Profile] = load_profiles() if args.action == "list" else templates()
+        for entry in shown.values():
             key: str = "key" if entry.has_key else "no key"
-            print(f"{entry.name:<20} {kind:<9} {entry.host:<28} {key:<7} {entry.note}")
+            print(f"{entry.name:<20} {entry.host:<28} {key:<7} {entry.note}")
         return 0
     if args.name is None:
         print(f"Give a profile name: {PROG} profile {args.action} NAME", file=sys.stderr)
         return 2
     if args.action == "show":
         profile: Profile = get_profile(name=args.name)
-        print(f"{profile.name}  ({'built-in' if profile.builtin else 'yours'})  {profile.note}".rstrip())
+        print(f"{profile.name}  {profile.note}".rstrip())
         for name, value in profile.variables.items():
             secret: bool = BY_NAME[name].secret
             print(f"  {name:<34} {value if args.reveal else mask(value=value, secret=secret)}")
         return 0
     if args.action == "save":
         if args.source:
-            base: Profile = get_profile(name=args.source)
+            base: Profile = get_profile(name=args.source, include_templates=True)
             variables: dict[str, str] = dict(base.variables)
             note: str = args.note or base.note
             result: Profile = Profile(name=args.name, variables=variables, note=note)
@@ -389,10 +399,14 @@ def cmd_profile(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             allow_shared_secret=args.allow_secret_in_shared_file,
         )
-    target_profile: Profile = get_profile(name=args.name)
-    if target_profile.builtin:
-        print(f"'{args.name}' is a built-in profile and cannot be deleted.", file=sys.stderr)
-        return 2
+    if args.action == "rename":
+        if args.new_name is None:
+            print(f"Give the new name: {PROG} profile rename {args.name} NEW", file=sys.stderr)
+            return 2
+        rename_profile(old=args.name, new=args.new_name)
+        print(f"Renamed profile '{args.name}' to '{args.new_name}'.")
+        return 0
+    get_profile(name=args.name)  # an unknown name stops here with the list of names
     if not args.yes and not _ask_yes(question=f"Delete profile '{args.name}'?"):
         print("Nothing deleted. Use --yes to delete without a question.", file=sys.stderr)
         return 1

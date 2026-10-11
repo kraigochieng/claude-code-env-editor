@@ -6,13 +6,13 @@ import pytest
 from claude_code_env_editor.profiles import (
     Profile,
     ProfileError,
-    all_profiles,
-    builtin_profiles,
     delete_profile,
     get_profile,
-    load_user_profiles,
+    load_profiles,
+    rename_profile,
     save_profile,
     snapshot,
+    templates,
 )
 
 KEY: str = "sk-demo-0123456789abcdef"
@@ -50,18 +50,79 @@ def test_properties() -> None:
     assert not Profile(name="q", variables={"ANTHROPIC_MODEL": "m"}).has_key
 
 
-def test_builtins_come_from_the_presets() -> None:
-    builtins: dict[str, Profile] = builtin_profiles()
-    assert builtins["deepseek"].builtin and builtins["deepseek"].base_url.startswith("https://api.deepseek.com")
-    assert not any(p.has_key for p in builtins.values())
+def test_templates_come_from_the_presets() -> None:
+    available: dict[str, Profile] = templates()
+    assert available["deepseek"].base_url.startswith("https://api.deepseek.com")
+    assert not any(p.has_key for p in available.values())
+
+
+# -- seeding -----------------------------------------------------------------
+
+
+def test_first_use_copies_the_templates_into_the_file(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    loaded: dict[str, Profile] = load_profiles(path=path)
+    assert list(loaded) == list(templates())
+    assert path.exists() and "templates_seeded = true" in path.read_text()
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_a_deleted_template_stays_deleted(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    load_profiles(path=path)
+    delete_profile(name="zai", path=path)
+    assert "zai" not in load_profiles(path=path)
+    assert "zai" not in load_profiles(path=path)
+
+
+def test_an_old_file_gets_only_the_missing_templates_once(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    path.parent.mkdir()
+    path.write_text(
+        '[profiles.mine.variables]\nANTHROPIC_MODEL = "m"\n'
+        '[profiles.deepseek.variables]\nANTHROPIC_MODEL = "my-own-deepseek-model"\n'
+    )
+    loaded: dict[str, Profile] = load_profiles(path=path)
+    assert loaded["mine"].variables == {"ANTHROPIC_MODEL": "m"}
+    assert loaded["deepseek"].variables == {"ANTHROPIC_MODEL": "my-own-deepseek-model"}  # not replaced
+    assert "openrouter" in loaded
+    assert load_profiles(path=path).keys() == loaded.keys()
+
+
+def test_reading_without_seeding_writes_nothing(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    assert load_profiles(path=path, seed=False) == {}
+    assert not path.exists()
+
+
+def test_a_broken_file_is_not_overwritten_by_seeding(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    path.parent.mkdir()
+    path.write_text("profiles = [")
+    with pytest.raises(ProfileError):
+        load_profiles(path=path)
+    with pytest.raises(ProfileError):
+        save_profile(profile=Profile(name="a", variables={}), path=path)
+    assert path.read_text() == "profiles = ["
+
+
+def test_file_with_an_unknown_variable_is_refused(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    path.parent.mkdir()
+    path.write_text('[profiles.evil.variables]\nLD_PRELOAD = "/tmp/x.so"\n')
+    with pytest.raises(ProfileError, match="LD_PRELOAD"):
+        load_profiles(path=path)
+
+
+# -- save, edit, delete ------------------------------------------------------
 
 
 def test_save_and_load_round_trip(tmp_path: Path) -> None:
     path: Path = store(tmp_path)
     save_profile(profile=Profile(name="work", variables=DEEPSEEK, note="DeepSeek at work"), path=path)
-    loaded: dict[str, Profile] = load_user_profiles(path=path)
+    loaded: dict[str, Profile] = load_profiles(path=path)
     assert loaded["work"].variables == DEEPSEEK and loaded["work"].note == "DeepSeek at work"
-    assert not loaded["work"].builtin
+    assert list(loaded)[-1] == "work"  # after the seeded templates
 
 
 def test_file_mode_directory_mode_and_gitignore(tmp_path: Path) -> None:
@@ -78,53 +139,70 @@ def test_existing_name_needs_overwrite(tmp_path: Path) -> None:
     with pytest.raises(ProfileError, match="--force"):
         save_profile(profile=Profile(name="work", variables={}), path=path)
     save_profile(profile=Profile(name="work", variables={"ANTHROPIC_MODEL": "m"}), path=path, overwrite=True)
-    assert load_user_profiles(path=path)["work"].variables == {"ANTHROPIC_MODEL": "m"}
+    assert load_profiles(path=path)["work"].variables == {"ANTHROPIC_MODEL": "m"}
 
 
-def test_builtin_name_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ProfileError, match="built-in"):
-        save_profile(profile=Profile(name="deepseek", variables={}), path=store(tmp_path))
+def test_a_template_profile_can_be_changed_like_any_other(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    changed: Profile = Profile(name="deepseek", variables={"ANTHROPIC_MODEL": "deepseek-v4-pro"})
+    save_profile(profile=changed, path=path, overwrite=True)
+    assert load_profiles(path=path)["deepseek"].variables == {"ANTHROPIC_MODEL": "deepseek-v4-pro"}
 
 
 def test_delete(tmp_path: Path) -> None:
     path: Path = store(tmp_path)
     save_profile(profile=Profile(name="a", variables={}), path=path)
-    save_profile(profile=Profile(name="b", variables={}), path=path)
     delete_profile(name="a", path=path)
-    assert list(load_user_profiles(path=path)) == ["b"]
+    assert "a" not in load_profiles(path=path)
     with pytest.raises(ProfileError, match="Unknown"):
         delete_profile(name="a", path=path)
-    with pytest.raises(ProfileError, match="built-in"):
-        delete_profile(name="deepseek", path=path)
 
 
-def test_broken_file_raises_and_is_not_overwritten(tmp_path: Path) -> None:
+def test_get_profile_explains_and_can_fall_back_to_a_template(tmp_path: Path) -> None:
     path: Path = store(tmp_path)
-    path.parent.mkdir()
-    path.write_text("profiles = [")
-    with pytest.raises(ProfileError):
-        load_user_profiles(path=path)
-    with pytest.raises(ProfileError):
-        save_profile(profile=Profile(name="a", variables={}), path=path)
-    assert path.read_text() == "profiles = ["
-
-
-def test_file_with_an_unknown_variable_is_refused(tmp_path: Path) -> None:
-    path: Path = store(tmp_path)
-    path.parent.mkdir()
-    path.write_text('[profiles.evil.variables]\nLD_PRELOAD = "/tmp/x.so"\n')
-    with pytest.raises(ProfileError, match="LD_PRELOAD"):
-        load_user_profiles(path=path)
-
-
-def test_all_profiles_lists_builtins_first_and_get_profile_explains(tmp_path: Path) -> None:
-    path: Path = store(tmp_path)
-    save_profile(profile=Profile(name="mine", variables=DEEPSEEK), path=path)
-    names: list[str] = list(all_profiles(path=path))
-    assert names[: len(builtin_profiles())] == list(builtin_profiles())
-    assert names[-1] == "mine"
     with pytest.raises(ProfileError, match="Choose one of"):
         get_profile(name="nope", path=path)
+    delete_profile(name="deepseek", path=path)
+    with pytest.raises(ProfileError):
+        get_profile(name="deepseek", path=path)
+    assert get_profile(name="deepseek", path=path, include_templates=True).base_url.startswith("https://api.deepseek")
+
+
+# -- rename ------------------------------------------------------------------
+
+
+def test_rename_keeps_position_variables_and_note(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    save_profile(profile=Profile(name="work", variables=DEEPSEEK, note="n"), path=path)
+    before: list[str] = list(load_profiles(path=path))
+    rename_profile(old="work", new="work-ds", path=path)
+    after: dict[str, Profile] = load_profiles(path=path)
+    assert list(after) == [("work-ds" if name == "work" else name) for name in before]
+    assert after["work-ds"].variables == DEEPSEEK and after["work-ds"].note == "n"
+    assert "work" not in after
+
+
+def test_rename_a_template_profile(tmp_path: Path) -> None:
+    path: Path = store(tmp_path)
+    rename_profile(old="deepseek", new="my-deepseek", path=path)
+    names: dict[str, Profile] = load_profiles(path=path)
+    assert "my-deepseek" in names and "deepseek" not in names
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("nope", "x", "Unknown"),
+        ("deepseek", "deepseek", "same"),
+        ("deepseek", "openrouter", "exists"),
+        ("deepseek", "has space", "valid profile name"),
+    ],
+)
+def test_rename_refusals(tmp_path: Path, old: str, new: str, message: str) -> None:
+    path: Path = store(tmp_path)
+    with pytest.raises(ProfileError, match=message):
+        rename_profile(old=old, new=new, path=path)
+    assert "deepseek" in load_profiles(path=path)  # nothing changed
 
 
 def test_snapshot_keeps_only_known_variables_and_can_drop_keys() -> None:

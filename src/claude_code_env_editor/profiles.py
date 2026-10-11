@@ -32,14 +32,13 @@ class ProfileError(Exception):
 
 
 class Profile(BaseModel):
-    """A name and a set of known variables. A built-in profile is read-only."""
+    """A name and a set of known variables."""
 
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     name: str
     variables: dict[str, str]
     note: str = ""
-    builtin: bool = False
 
     @field_validator("name")
     @classmethod
@@ -91,8 +90,9 @@ class _ProfileEntry(BaseModel):
 
 
 class _ProfilesFile(BaseModel):
-    """The content of profiles.toml."""
+    """The content of profiles.toml. templates_seeded tells that the templates were copied in once."""
 
+    templates_seeded: bool = False
     profiles: dict[str, _ProfileEntry] = {}
 
 
@@ -101,52 +101,70 @@ def default_profiles_path() -> Path:
     return Path(user_config_dir(appname=APP_NAME)) / PROFILES_NAME
 
 
-def builtin_profiles() -> dict[str, Profile]:
-    """Return the presets as read-only profiles."""
+def templates() -> dict[str, Profile]:
+    """Return the templates that ship with the tool: the presets as profiles.
+
+    A template is a starting point. The first use copies the templates into profiles.toml, and from then on
+    they are normal profiles.
+    """
     presets: dict[str, Preset] = load_presets()
     return {
-        preset_id: Profile(name=preset_id, variables=dict(preset.variables), note=preset.label, builtin=True)
+        preset_id: Profile(name=preset_id, variables=dict(preset.variables), note=preset.label)
         for preset_id, preset in presets.items()
     }
 
 
-def load_user_profiles(path: Path | None = None) -> dict[str, Profile]:
-    """Return the profiles of the user. A missing file gives an empty dict.
+def _read(path: Path) -> tuple[dict[str, Profile], bool]:
+    """Return the profiles in the file and the seeded marker. A missing file gives ({}, False).
 
     A broken file raises ProfileError. The tool never replaces a file that it cannot read.
     """
-    file_path: Path = path or default_profiles_path()
-    if not file_path.exists():
-        return {}
+    if not path.exists():
+        return {}, False
     try:
-        raw: dict[str, object] = tomllib.loads(file_path.read_text(encoding="utf-8"))
+        raw: dict[str, object] = tomllib.loads(path.read_text(encoding="utf-8"))
         parsed: _ProfilesFile = _ProfilesFile.model_validate(obj=raw)
-        return {
+        profiles: dict[str, Profile] = {
             name: Profile(name=name, variables=entry.variables, note=entry.note)
             for name, entry in parsed.profiles.items()
         }
+        return profiles, parsed.templates_seeded
     except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ProfileError(f"{file_path} cannot be read: {exc}") from exc
+        raise ProfileError(f"{path} cannot be read: {exc}") from exc
     except ValidationError as exc:
         first: str = exc.errors()[0]["msg"]
-        raise ProfileError(f"{file_path} has a wrong entry: {first}") from exc
+        raise ProfileError(f"{path} has a wrong entry: {first}") from exc
 
 
-def all_profiles(path: Path | None = None) -> dict[str, Profile]:
-    """Return the built-in profiles first, then yours. A built-in name cannot be shadowed."""
-    profiles: dict[str, Profile] = builtin_profiles()
-    for name, profile in load_user_profiles(path=path).items():
-        if name not in profiles:
-            profiles[name] = profile
+def load_profiles(path: Path | None = None, seed: bool = True) -> dict[str, Profile]:
+    """Return your profiles in file order.
+
+    On first use, and once for a file from an older version, the templates are copied in under names that
+    you do not have yet. A marker stops a second copy, so a profile that you delete stays deleted.
+    With seed False, the file is only read.
+    """
+    file_path: Path = path or default_profiles_path()
+    profiles, seeded = _read(path=file_path)
+    if seed and not seeded:
+        for name, template in templates().items():
+            if name not in profiles:
+                profiles[name] = template
+        _write(profiles=profiles, path=file_path)
     return profiles
 
 
-def get_profile(name: str, path: Path | None = None) -> Profile:
-    """Return one profile by name. Raise ProfileError with the known names when it is missing."""
-    profiles: dict[str, Profile] = all_profiles(path=path)
-    if name not in profiles:
-        raise ProfileError(f"Unknown profile '{name}'. Choose one of: {', '.join(profiles)}.")
-    return profiles[name]
+def get_profile(name: str, path: Path | None = None, include_templates: bool = False) -> Profile:
+    """Return one profile by name. Raise ProfileError with the known names when it is missing.
+
+    With include_templates, a template that you removed from your list is found too.
+    """
+    profiles: dict[str, Profile] = load_profiles(path=path)
+    if name in profiles:
+        return profiles[name]
+    available: dict[str, Profile] = templates()
+    if include_templates and name in available:
+        return available[name]
+    raise ProfileError(f"Unknown profile '{name}'. Choose one of: {', '.join(profiles) or 'none'}.")
 
 
 def snapshot(name: str, env: Mapping[str, str], include_keys: bool = True, note: str = "") -> Profile:
@@ -162,38 +180,54 @@ def snapshot(name: str, env: Mapping[str, str], include_keys: bool = True, note:
 def save_profile(profile: Profile, path: Path | None = None, overwrite: bool = False) -> Path:
     """Write a profile to profiles.toml (atomic, mode 0600) and return the path.
 
-    A built-in name is refused. An existing name needs overwrite. A .gitignore is written next to the
-    file, because the file can hold keys.
+    An existing name needs overwrite. A .gitignore is written next to the file, because it can hold keys.
     """
     file_path: Path = path or default_profiles_path()
-    if profile.name in builtin_profiles():
-        raise ProfileError(f"'{profile.name}' is a built-in profile. Save it under another name.")
-    user: dict[str, Profile] = load_user_profiles(path=file_path)
-    if profile.name in user and not overwrite:
+    profiles: dict[str, Profile] = load_profiles(path=file_path)
+    if profile.name in profiles and not overwrite:
         raise ProfileError(f"A profile named '{profile.name}' exists. Use --force to replace it.")
-    user[profile.name] = Profile(name=profile.name, variables=profile.variables, note=profile.note)
-    _write(profiles=user, path=file_path)
+    profiles[profile.name] = Profile(name=profile.name, variables=profile.variables, note=profile.note)
+    _write(profiles=profiles, path=file_path)
     return file_path
 
 
 def delete_profile(name: str, path: Path | None = None) -> None:
-    """Remove one of your profiles. A built-in profile cannot be removed."""
+    """Remove one of your profiles. A template that you remove stays removed."""
     file_path: Path = path or default_profiles_path()
-    if name in builtin_profiles():
-        raise ProfileError(f"'{name}' is a built-in profile and cannot be deleted.")
-    user: dict[str, Profile] = load_user_profiles(path=file_path)
-    if name not in user:
-        raise ProfileError(f"Unknown profile '{name}'. Yours: {', '.join(user) or 'none'}.")
-    del user[name]
-    _write(profiles=user, path=file_path)
+    profiles: dict[str, Profile] = load_profiles(path=file_path)
+    if name not in profiles:
+        raise ProfileError(f"Unknown profile '{name}'. Yours: {', '.join(profiles) or 'none'}.")
+    del profiles[name]
+    _write(profiles=profiles, path=file_path)
+
+
+def rename_profile(old: str, new: str, path: Path | None = None) -> None:
+    """Give a profile a new name. It keeps its position, its variables, and its note.
+
+    The new name follows the name rules. A name that exists is refused.
+    """
+    file_path: Path = path or default_profiles_path()
+    profiles: dict[str, Profile] = load_profiles(path=file_path)
+    if old not in profiles:
+        raise ProfileError(f"Unknown profile '{old}'. Yours: {', '.join(profiles) or 'none'}.")
+    if new == old:
+        raise ProfileError("The new name is the same as the old name.")
+    if new in profiles:
+        raise ProfileError(f"A profile named '{new}' exists. Choose another name.")
+    try:
+        renamed: Profile = Profile(name=new, variables=profiles[old].variables, note=profiles[old].note)
+    except ValidationError as exc:
+        raise ProfileError(exc.errors()[0]["msg"].removeprefix("Value error, ")) from exc
+    _write(profiles={(new if name == old else name): (renamed if name == old else p) for name, p in profiles.items()}, path=file_path)
 
 
 def _write(profiles: Mapping[str, Profile], path: Path) -> None:
-    """Write the profiles of the user as TOML, then make sure that a .gitignore lists the file."""
+    """Write the profiles as TOML with the seeded marker, then make sure that a .gitignore lists the file."""
     data: dict[str, object] = {
+        "templates_seeded": True,
         "profiles": {
             name: {"note": profile.note, "variables": dict(profile.variables)} for name, profile in profiles.items()
-        }
+        },
     }
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     atomic_write_text(path=path, text=tomli_w.dumps(data), mode=0o600)
