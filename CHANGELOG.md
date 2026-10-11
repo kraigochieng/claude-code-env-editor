@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.12.0 (2026-10-11)
+
+### Features
+
+- **destinations**: Model the places where a profile is applied
+  ([`24fb495`](https://github.com/kraigochieng/claude-code-env-editor/commit/24fb4957ffe8f492f95edbb7f54898de199715ae))
+
+A Destination is one settings file: a login (a config directory) or a project folder
+  (.claude/settings.local.json). destination_state tells if a profile matches, differs, or if the
+  place is empty or unreadable. applied_in maps each profile to the places whose file matches it.
+  The screens do not change yet.
+
+Closes #62
+
+
 ## v0.11.0 (2026-10-11)
 
 ### Features
