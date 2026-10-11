@@ -1,6 +1,75 @@
 # CHANGELOG
 
 
+## v0.19.1 (2026-10-11)
+
+### Bug Fixes
+
+- **verify**: Check that the endpoint accepts tool definitions
+  ([`c5ee459`](https://github.com/kraigochieng/claude-code-env-editor/commit/c5ee4599c455fbc18dd751e4bcf96b5e3a16992b))
+
+verify sent no tools, so it said ok for an endpoint that Claude Code cannot use. A DeepSeek test
+  failed in Claude Code with: API Error: 400 Invalid schema for function 'Artifact': "^[^\\0]*$" is
+  not a "regex".
+
+After the model check passes, verify sends two one-token requests with a tool: a plain tool, then a
+  tool with the pattern of the Artifact tool. A rejection gives a clear message. The message for the
+  pattern names the fix: --disallowedTools Artifact, or permissions.deny. A rate limit or a network
+  error is not blamed on the schema. Secrets are masked.
+
+Closes #88
+
+### Refactoring
+
+- **tests**: Split test_tui.py and test_cli.py by topic
+  ([`cd7348a`](https://github.com/kraigochieng/claude-code-env-editor/commit/cd7348a1a18d6a8309742a5a49c709402641544c))
+
+test_tui.py had 952 lines and test_cli.py had 341 lines. The tests follow the packages that they
+  test.
+
+tests/tui: conftest (fixtures), helpers, and one file each for the profile list, the variables page,
+  the verify dialog, the apply dialog, and the other dialogs.
+
+tests/cli: conftest, helpers, and one file each for the parser, the variable commands, the profile
+  command, and the clear command.
+
+No test is removed or changed. The same 83 test functions run, and 227 tests pass. One test moved:
+  test_tui_command_accepts_a_file_option is in the parser tests now. tests/ is a package now, so the
+  helpers import as tests.tui.helpers and tests.cli.helpers.
+
+Closes #84
+
+- **tui**: Share one profile-name check between new, copy, and edit
+  ([`31f23b1`](https://github.com/kraigochieng/claude-code-env-editor/commit/31f23b158a02226f2d496ceaaea4a351f242cc75))
+
+The new, copy, and edit flows each held a copy of the same name check. profiles.name_problem checks
+  the format and a clash with a taken name, also in another case. The edit flow leaves the profile's
+  own name out of the taken names. The messages do not change, and the TUI tests pass without an
+  edit.
+
+Closes #86
+
+- **tui**: Split pages.py into a package
+  ([`2a99ee1`](https://github.com/kraigochieng/claude-code-env-editor/commit/2a99ee18e27125a118bafbfbbd7612461ca9ab5a))
+
+pages.py had 791 lines. The package has one module for each topic:
+
+- table: PageTable - base: BasePage (layout, banner, status, help) - apply_flow: choose a place,
+  review the changes, write them - profile_actions: delete and copy - profile_list: ProfileListPage,
+  with the verify action - verify_view: render_checks, now a plain function - variables:
+  VariablesPage
+
+The pages keep one chain of base classes: BasePage, ApplyFlowPage, ProfileActionsPage,
+  ProfileListPage. VariablesPage derives from BasePage only, because it uses none of the profile
+  flows. The package exports the same names as before. The screenshots of seven pages are byte for
+  byte the same as before the split. The verify screenshot differs in the measured time of the fake
+  response only.
+
+Tests that patched tui.pages.verify patch tui.pages.profile_list.verify.
+
+Closes #82
+
+
 ## v0.19.0 (2026-10-11)
 
 ### Features
