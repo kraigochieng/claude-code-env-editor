@@ -1,6 +1,28 @@
 # CHANGELOG
 
 
+## v0.18.0 (2026-10-11)
+
+### Refactoring
+
+- Remove the --merge option and the preset command
+  ([`cba96a4`](https://github.com/kraigochieng/claude-code-env-editor/commit/cba96a46045e395f497db9f743a411bd1e198d69))
+
+profile apply always replaces the known variables, so nothing of the previous endpoint stays. The
+  merge mode and its warnings are removed from apply.py. profile templates, profile list, and
+  profile save --from cover what preset did.
+
+BREAKING CHANGE: profile apply no longer accepts --merge, and the preset command is removed. Use
+  profile apply NAME, or profile save NAME --from TEMPLATE.
+
+Closes #74
+
+### Breaking Changes
+
+- Profile apply no longer accepts --merge, and the preset command is removed. Use profile apply
+  NAME, or profile save NAME --from TEMPLATE.
+
+
 ## v0.17.0 (2026-10-11)
 
 ### Features
