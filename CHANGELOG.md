@@ -1,6 +1,29 @@
 # CHANGELOG
 
 
+## v0.19.0 (2026-10-11)
+
+### Features
+
+- **cli**: Add a clear command that erases the known variables
+  ([`782f75b`](https://github.com/kraigochieng/claude-code-env-editor/commit/782f75b9719043dbb462af04e1fd84b1b607f9bd))
+
+clear removes every known variable from the env block of the chosen settings file. Custom variables
+  and all other settings keys stay. It lists the removals with the keys masked, asks first, and
+  keeps a .bak copy. --dry-run writes nothing. A file with no known variable stays as it is.
+
+Closes #78
+
+- **tui**: Show the variables of the profile in the apply dialog
+  ([`31d82d0`](https://github.com/kraigochieng/claude-code-env-editor/commit/31d82d09d2c3b6348903976f1db354dbde4d765a))
+
+The list of places shows what the profile sets, with the key masked. A profile with no variables
+  says that applying it removes the known variables. The list takes the keyboard focus, so Enter
+  chooses at once. README and screenshots follow.
+
+Closes #76
+
+
 ## v0.18.0 (2026-10-11)
 
 ### Refactoring
