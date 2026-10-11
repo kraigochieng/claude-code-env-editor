@@ -67,35 +67,32 @@ claude-code-env-editor help set
 
 **Paste a key with `Ctrl+Shift+V`.** A terminal does not use `Ctrl+V`. On macOS use `Cmd+V`. This works in the value box of the edit dialog.
 
-The TUI has two pages.
+The TUI has two pages. Neither page shows a file or a config directory. A folder appears only when you apply.
 
-**Profile list (main page).** It shows your profiles. A `*` marks the profile that matches the file.
-The banner names that profile, or says that the file has its own values.
+**Profile list (main page).** Your profiles, with the endpoint, whether the profile holds a key, and the login
+folders where the profile is applied now (`Applied in`).
 
 | Key | Action |
 |---|---|
 | `enter` | Open the profile and see its variables |
-| `a` | Apply the profile to the file (replace mode). A dialog shows every change first |
-| `m` | Apply in merge mode |
-| `c` | Open the current values of the file |
-| `s` | Save the current values of the file as a profile |
+| `a` | Apply the profile (replace mode). You choose the place, then review the changes |
+| `m` | Apply the profile in merge mode |
+| `n` | New profile: from a template, from the values of a folder, or as a copy of a profile |
 | `r` | Rename the profile |
 | `x` | Delete the profile (asks first) |
-| `d` | Switch the config directory, or open another settings file |
-| `v` | Verify the endpoint of the file |
+| `v` | Verify the endpoint, the key, and the model of the profile |
 | `?` / `q` | Help / quit |
 
-**Variables page (a profile, or the current file).** It shows the variables and where each value comes from.
+**Profile page.** The variables of one profile.
 
 | Key | Action |
 |---|---|
-| `e` / `enter` | Edit the selected variable. In a profile the change goes to `profiles.toml` |
+| `e` / `enter` | Edit the selected variable. The change goes to `profiles.toml` |
 | `x` | Remove the variable (asks first) |
 | `r` | Reveal or hide secrets |
-| `a` / `m` | On a profile: apply it to the file (replace or merge) |
-| `c` | On a profile: copy it under a new name, then edit the copy |
-| `s` | On the current file: save its values as a profile |
-| `v` | Verify the endpoint, the key, and the model of the page |
+| `a` / `m` | Apply the profile (replace or merge) |
+| `c` | Copy the profile under a new name, then edit the copy |
+| `v` | Verify the endpoint, the key, and the model |
 | `esc` | Back to the profile list |
 
 ## Profiles
@@ -142,9 +139,19 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
 
 ### Profiles in the TUI
 
-The profile list is the main page. `a` on a row applies that profile. The dialog lists every change, with secrets
-masked, and writes only after a yes. A profile with a key is refused for a file that may be committed. The dialog
-says why. The CLI option `--allow-secret-in-shared-file` is the only way to override that.
+`a` on a profile opens the list of places:
+
+- **Your login folders.** Each one shows the state of the profile there: `matches this profile`,
+  `has other values (3 differ)`, or `empty`.
+- **A project folder.** You type the path. The tool writes `<folder>/.claude/settings.local.json`, which Claude Code
+  keeps out of git. A key in a profile cannot reach your repository by accident.
+
+After you choose a place, a dialog lists every change, with secrets masked. It writes only after a yes. A profile
+with a key is refused for a file that may be committed, and the status line says why. The CLI option
+`--allow-secret-in-shared-file` is the only way to override that.
+
+`n` makes a new profile. A folder import takes the known variables of a login folder or of a project folder, and asks
+whether the key goes into the profile.
 
 ### Manage profiles
 
@@ -179,7 +186,7 @@ A hidden variable stays visible when it has a value, with a warning in the banne
 
 The screenshots use demo data: a made-up key and a made-up config directory. The verify page uses sample responses.
 
-**Profiles (main page).** Your profiles. `*` marks the profile that the file matches. The banner names it.
+**Profiles (main page).** Your profiles and where each one is applied.
 
 ![Profile list](docs/screenshots/home.svg)
 
@@ -187,13 +194,17 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 ![Variables of one profile](docs/screenshots/profile.svg)
 
-**Apply.** `a` shows every change before it writes. Secrets are masked. A key of another endpoint is removed.
+**Where to apply.** `a` lists your login folders with the state of the profile in each, and a project folder.
+
+![List of places with the state of the profile](docs/screenshots/places.svg)
+
+**Apply.** After you choose a place, the dialog shows every change. Secrets are masked. A key of another endpoint is removed.
 
 ![Apply dialog with the changes](docs/screenshots/apply.svg)
 
-**Current file.** `c` shows what Claude Code reads now, and where each value comes from.
+**New profile.** `n` starts from a template, from a folder, or from a copy.
 
-![Variables of the current file](docs/screenshots/current.svg)
+![New profile menu](docs/screenshots/new.svg)
 
 **Edit.** `e` on a variable. Paste with `Ctrl+Shift+V`. An empty value removes the variable.
 
@@ -202,10 +213,6 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 **Verify.** Press `v` to check the URL, the key, and the model name.
 
 ![Verify result with three passed checks](docs/screenshots/verify.svg)
-
-**Config directories.** Press `d` to switch between logins. The tool finds a directory by its content, so the name can be anything (`.acme-login`).
-
-![Config directory switcher](docs/screenshots/directories.svg)
 
 **Help.** Press `?` to list the keys.
 
@@ -267,8 +274,8 @@ The tool finds config directories from three sources. The name does not matter.
   on macOS, `%APPDATA%` on Windows).
 - A scan: hidden directories in your home that hold `.claude.json`, or `settings.json` and a `projects` directory.
 
-Run `claude-code-env-editor dirs` to list them. Inside the TUI press `d` to switch between them, or to type the path of any
-settings file (for example `.claude/settings.local.json` of a project). `claude-code-env-editor tui --file PATH` opens one directly.
+Run `claude-code-env-editor dirs` to list them. In the TUI, `a` on a profile lists these folders as places to apply.
+`claude-code-env-editor tui --config-dir DIR` or `tui --file PATH` puts that place first in the list.
 
 ## Security
 

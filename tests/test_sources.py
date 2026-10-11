@@ -1,10 +1,9 @@
-import json
 from pathlib import Path
 
 import pytest
 
 from claude_code_env_editor.profiles import Profile, load_profiles, save_profile
-from claude_code_env_editor.sources import FileSource, ProfileSource, matching_profile
+from claude_code_env_editor.sources import ProfileSource
 
 VARS: dict[str, str] = {
     "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
@@ -12,20 +11,9 @@ VARS: dict[str, str] = {
 }
 
 
-def test_file_source_loads_and_saves_the_env_block(tmp_path: Path) -> None:
-    settings: Path = tmp_path / "settings.json"
-    settings.write_text(json.dumps({"theme": "dark", "env": {"A": "1"}}))
-    source: FileSource = FileSource(settings_file=settings)
-    assert source.kind == "file" and source.editable
-    assert source.load() == {"A": "1"}
-    source.save(updates={"B": "2", "A": None})
-    data: dict[str, object] = json.loads(settings.read_text())
-    assert data == {"theme": "dark", "env": {"B": "2"}}
-
-
-def test_profile_source_is_editable() -> None:
+def test_profile_source_loads_the_variables() -> None:
     source: ProfileSource = ProfileSource(profile=Profile(name="b", variables=VARS))
-    assert source.kind == "profile" and source.editable
+    assert source.name == "b"
     assert source.load() == VARS
 
 
@@ -48,24 +36,3 @@ def test_profile_source_refuses_an_invalid_value(tmp_path: Path, monkeypatch: py
     with pytest.raises(ValueError):
         source.save(updates={"ANTHROPIC_BASE_URL": "not-a-url"})
     assert source.load() == VARS and not path.exists()
-
-
-def test_matching_profile_compares_known_variables_only() -> None:
-    profiles: dict[str, Profile] = {"ds": Profile(name="ds", variables=VARS)}
-    env: dict[str, str] = {**VARS, "PATH": "/x", "SOME_CUSTOM": "1"}
-    found: Profile | None = matching_profile(env=env, profiles=profiles)
-    assert found is not None and found.name == "ds"
-    assert matching_profile(env={**VARS, "ANTHROPIC_MODEL": "other"}, profiles=profiles) is None
-
-
-def test_matching_profile_takes_the_first_match_in_list_order() -> None:
-    profiles: dict[str, Profile] = {
-        "first": Profile(name="first", variables=VARS),
-        "second": Profile(name="second", variables=VARS),
-    }
-    found: Profile | None = matching_profile(env=VARS, profiles=profiles)
-    assert found is not None and found.name == "first"
-
-
-def test_empty_env_matches_nothing() -> None:
-    assert matching_profile(env={}, profiles={"p": Profile(name="p", variables={})}) is None
