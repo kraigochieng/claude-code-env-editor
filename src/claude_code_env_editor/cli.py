@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         return p
 
     p: argparse.ArgumentParser = add_command(name="tui", help_="Open the full-screen interface (default).", example=f"{PROG} tui --config-dir ~/.claude-work")
-    _add_dir(p=p, allow_file=False)
+    _add_dir(p=p)
 
     p = add_command(name="show", help_="Show each variable, its value, and its source.", example=f"{PROG} show --reveal")
     _add_dir(p=p)
@@ -439,7 +439,7 @@ def cmd_tui(args: argparse.Namespace) -> int:
     """Open the full-screen interface."""
     from claude_code_env_editor.tui.app import run
 
-    return run(config_dir=_chosen_target(args=args).config_dir)
+    return run(target=_chosen_target(args=args))
 
 
 def main(argv: list[str] | None = None) -> int:

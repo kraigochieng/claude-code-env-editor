@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar, Final
 
@@ -10,15 +11,17 @@ from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from claude_code_env_editor import __version__, config
+from claude_code_env_editor.apply import ApplyPlan, Mode, format_plan, plan_apply, secret_target_problem
 from claude_code_env_editor.auth import describe, visible_rows
 from claude_code_env_editor.envvars import (
+    BY_NAME,
     CHOICE,
     SOURCE_ENV,
     SOURCE_UNSET,
@@ -27,11 +30,23 @@ from claude_code_env_editor.envvars import (
     resolve,
     validate,
 )
-from claude_code_env_editor.presets import Preset, load_presets, preset_values
+from claude_code_env_editor.profiles import (
+    NAME_PATTERN,
+    Profile,
+    ProfileError,
+    all_profiles,
+    builtin_profiles,
+    delete_profile,
+    get_profile,
+    load_user_profiles,
+    save_profile,
+    snapshot,
+)
 from claude_code_env_editor.target import Target
 from claude_code_env_editor.verify import FAIL, PASS, SKIP, Check, Endpoint, verify
 
 REMOVE_CHOICE: Final[str] = "__remove__"
+OTHER_FILE: Final[str] = "__file__"
 PASTE_HINT: Final[str] = "Paste with Ctrl+Shift+V (Ctrl+V does not work in a terminal)."
 
 HELP_KEYS: Final[tuple[tuple[str, str], ...]] = (
@@ -39,8 +54,8 @@ HELP_KEYS: Final[tuple[tuple[str, str], ...]] = (
     ("ctrl+shift+v", "Paste in a value box. A terminal does not use Ctrl+V"),
     ("v", "Verify the endpoint, the key, and the model"),
     ("r", "Reveal or hide secret values"),
-    ("p", "Apply a preset endpoint"),
-    ("d", "Switch the Claude Code config directory"),
+    ("p", "Profiles: apply, save the current values, delete"),
+    ("d", "Switch the config directory, or open another settings file"),
     ("x", "Remove the selected variable from settings.json"),
     ("?", "Show this help"),
     ("q", "Quit"),
@@ -104,7 +119,8 @@ class ConfirmScreen(ModalScreen[bool]):
         """Build the dialog: title, question, key hints."""
         with Vertical(classes="dialog"):
             yield Static(self.title_text, classes="heading")
-            yield Static(self.question, id="question")
+            with VerticalScroll(id="question-box"):
+                yield Static(Text(self.question), id="question")
             yield Static("y or enter: yes  -  n or esc: no", classes="hint")
             yield Static(self.hint_text, classes="hint")
 
@@ -115,6 +131,108 @@ class ConfirmScreen(ModalScreen[bool]):
     def action_no(self) -> None:
         """Close the dialog with no."""
         self.dismiss(result=False)
+
+
+class InputScreen(ModalScreen[str | None]):
+    """Dialog to type one line of text. A check function can refuse the text with a message."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding(key="escape", action="cancel", description="Cancel")]
+
+    def __init__(self, title: str, prompt: str, check: Callable[[str], str | None], placeholder: str = "") -> None:
+        """Keep the title, the prompt, the check function, and the placeholder."""
+        super().__init__()
+        self.title_text: str = title
+        self.prompt: str = prompt
+        self.check: Callable[[str], str | None] = check
+        self.placeholder: str = placeholder
+
+    def compose(self) -> ComposeResult:
+        """Build the dialog: title, prompt, input, error line, hints."""
+        with Vertical(classes="dialog"):
+            yield Static(self.title_text, classes="heading")
+            yield Static(Text(self.prompt))
+            yield Input(placeholder=self.placeholder, id="line")
+            yield Static("", id="error", classes="fail")
+            yield Static(PASTE_HINT, id="paste-hint", classes="hint")
+            yield Static("enter save  -  esc cancel", classes="hint")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Run the check. Close the dialog with the text when it is good, else show the message."""
+        text: str = event.value.strip()
+        problem: str | None = self.check(text)
+        if problem:
+            self.query_one(selector="#error", expect_type=Static).update(Text(problem))
+            return
+        self.dismiss(result=text)
+
+    def action_cancel(self) -> None:
+        """Close the dialog without text."""
+        self.dismiss(result=None)
+
+
+class ProfileScreen(ModalScreen[tuple[str, str] | None]):
+    """The profile list. It returns (action, profile name) or None."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding(key="escape", action="cancel", description="Close"),
+        Binding(key="m", action="merge", description="Merge"),
+        Binding(key="s", action="save", description="Save"),
+        Binding(key="x", action="delete", description="Delete"),
+    ]
+
+    def __init__(self, profiles: dict[str, Profile], target_label: str) -> None:
+        """Keep the profiles and the text that names the target file."""
+        super().__init__()
+        self.profiles: dict[str, Profile] = profiles
+        self.target_label: str = target_label
+
+    def compose(self) -> ComposeResult:
+        """Build the dialog: title, target, list, key hints."""
+        options: list[Option] = []
+        for profile in self.profiles.values():
+            kind: str = "built-in" if profile.builtin else "yours"
+            key: str = "key" if profile.has_key else "no key"
+            label: str = f"{profile.name:<18} {kind:<9} {profile.host:<26} {key}"
+            options.append(Option(Text(label), id=profile.name))
+        with Vertical(classes="dialog"):
+            yield Static("Profiles", classes="heading")
+            yield Static(Text(f"Target: {self.target_label}"), classes="hint")
+            yield OptionList(*options, id="profiles")
+            yield Static("enter apply (replace)  -  m apply (merge)  -  s save current values", classes="hint")
+            yield Static("x delete (yours only)  -  esc close", classes="hint")
+
+    def _highlighted_name(self) -> str | None:
+        """Return the name of the profile under the cursor, or None."""
+        option_list: OptionList = self.query_one(selector="#profiles", expect_type=OptionList)
+        index: int | None = option_list.highlighted
+        if index is None:
+            return None
+        return option_list.get_option_at_index(index=index).id
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Apply the chosen profile in replace mode."""
+        if event.option.id is not None:
+            self.dismiss(result=("apply", event.option.id))
+
+    def action_merge(self) -> None:
+        """Apply the profile under the cursor in merge mode."""
+        name: str | None = self._highlighted_name()
+        if name is not None:
+            self.dismiss(result=("merge", name))
+
+    def action_save(self) -> None:
+        """Ask the app to save the current values as a new profile."""
+        self.dismiss(result=("save", ""))
+
+    def action_delete(self) -> None:
+        """Ask the app to delete the profile under the cursor."""
+        name: str | None = self._highlighted_name()
+        if name is not None:
+            self.dismiss(result=("delete", name))
+
+    def action_cancel(self) -> None:
+        """Close the list."""
+        self.dismiss(result=None)
 
 
 class PickScreen(ModalScreen[str | None]):
@@ -179,17 +297,21 @@ class EnvEditorApp(App[None]):
         Binding(key="e,enter", action="edit", description="edit"),
         Binding(key="v", action="verify", description="verify"),
         Binding(key="r", action="reveal", description="reveal"),
-        Binding(key="p", action="preset", description="preset"),
+        Binding(key="p", action="profiles", description="profiles"),
         Binding(key="d", action="switch_dir", description="dir"),
         Binding(key="x", action="remove", description="remove"),
         Binding(key="question_mark", action="help", description="help"),
         Binding(key="q", action="quit", description="quit"),
     ]
 
-    def __init__(self, config_dir: Path) -> None:
-        """Keep the config directory. Secrets start hidden."""
+    def __init__(self, config_dir: Path | None = None, target: Target | None = None) -> None:
+        """Keep the target (a settings file), or build it from a config directory. Secrets start hidden."""
         super().__init__()
-        self.target: Target = Target.from_config_dir(config_dir=config_dir)
+        if target is None:
+            if config_dir is None:
+                raise ValueError("Give a config directory or a target.")
+            target = Target.from_config_dir(config_dir=config_dir)
+        self.target: Target = target
         self.reveal = False
         self.rows: list[Row] = []
 
@@ -245,12 +367,12 @@ class EnvEditorApp(App[None]):
         return Endpoint.from_values(values={r.name: r.value for r in self.rows if r.value})
 
     def _banner(self) -> Text:
-        """Build the banner text: version, config directory, and endpoint host."""
+        """Build the banner text: version, settings file, endpoint host, and expected auth."""
         t: Text = Text()
         t.append("* claude-code-env-editor", style="bold #d97757")
         t.append(f"  v{__version__}\n", style="dim")
-        t.append("config dir  ", style="dim")
-        t.append(f"{self.target.config_dir}\n")
+        t.append("file        ", style="dim")
+        t.append(f"{self.target.settings_file}\n")
         t.append("endpoint    ", style="dim")
         t.append(f"{self._endpoint().host}\n")
         t.append("auth        ", style="dim")
@@ -340,37 +462,223 @@ class EnvEditorApp(App[None]):
         self.refresh_rows(keep=row.name if row else None)
         self.set_status(message="Secrets are visible." if self.reveal else "Secrets are hidden.")
 
-    def action_preset(self) -> None:
-        """Open the preset list and apply the chosen preset."""
-        presets: dict[str, Preset] = load_presets()
-        options: list[tuple[str, str]] = [(pid, f"{preset.label:<24} {preset.base_url}") for pid, preset in presets.items()]
+    # -- profiles -----------------------------------------------------------
 
-        def apply_chosen_preset(pid: str | None) -> None:
-            """Write the preset values to settings.json."""
-            if not pid:
+    def action_profiles(self) -> None:
+        """Open the profile list."""
+        try:
+            profiles: dict[str, Profile] = all_profiles()
+        except ProfileError as exc:
+            self.set_status(message=str(exc), error=True)
+            return
+        self.push_screen(
+            screen=ProfileScreen(profiles=profiles, target_label=str(self.target.settings_file)),
+            callback=self._handle_profile_choice,
+        )
+
+    def _handle_profile_choice(self, result: tuple[str, str] | None) -> None:
+        """Run the action that the profile list returned."""
+        if result is None:
+            return
+        action, name = result
+        if action in ("apply", "merge"):
+            self._start_apply(name=name, mode="merge" if action == "merge" else "replace")
+        elif action == "save":
+            self._start_save()
+        elif action == "delete":
+            self._start_delete(name=name)
+
+    def _start_apply(self, name: str, mode: Mode) -> None:
+        """Show what the profile changes and write it after a yes."""
+        try:
+            profile: Profile = get_profile(name=name)
+            current: dict[str, str] = config.load_env(settings_file=self.target.settings_file)
+        except (ProfileError, config.ConfigError) as exc:
+            self.set_status(message=str(exc), error=True)
+            return
+        problem: str | None = secret_target_problem(profile=profile, target=self.target)
+        if problem:
+            self.set_status(message=f"Refused: {problem}", error=True)
+            return
+        plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode=mode)
+        if not plan.writes:
+            self.set_status(message=f"Nothing to change: the file already matches '{name}'.")
+            return
+        lines: list[str] = format_plan(plan=plan, reveal=self.reveal, wrap=True)
+        lines += [f"warning: {warning}" for warning in plan.warnings]
+        if any(c.action == "remove" and c.name in ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY") for c in plan.changes):
+            lines.append("note: the key is removed because the endpoint changes. Set a new one with e.")
+
+        def write_when_confirmed(confirmed: bool | None) -> None:
+            """Write the plan only after a yes."""
+            if not confirmed:
+                self.set_status(message="Nothing written.")
                 return
-            values: dict[str, str] = preset_values(preset_id=pid)
-            config.update_env(settings_file=self.target.settings_file, updates=values)
+            try:
+                config.update_env(settings_file=self.target.settings_file, updates=plan.updates())
+            except config.ConfigError as exc:
+                self.set_status(message=str(exc), error=True)
+                return
             self.refresh_rows()
-            self.set_status(message=f"Applied preset '{pid}'. Set ANTHROPIC_AUTH_TOKEN next if it is empty.")
+            self.set_status(message=f"Applied '{name}' ({mode}). The old file is kept as .bak.")
 
-        self.push_screen(screen=PickScreen(title="Apply a preset", options=options), callback=apply_chosen_preset)
+        self.push_screen(
+            screen=ConfirmScreen(
+                title=f"Apply profile '{name}' ({mode} mode) to {self.target.settings_file.name}?",
+                question="\n".join(lines),
+                hint="The old file is kept as a .bak copy. Secrets are masked.",
+            ),
+            callback=write_when_confirmed,
+        )
+
+    def _start_save(self) -> None:
+        """Ask for a name, then for the key question, then save the current values as a profile."""
+        try:
+            env: dict[str, str] = config.load_env(settings_file=self.target.settings_file)
+            existing: set[str] = set(load_user_profiles())
+        except (config.ConfigError, ProfileError) as exc:
+            self.set_status(message=str(exc), error=True)
+            return
+        known: dict[str, str] = {k: v for k, v in env.items() if k in BY_NAME}
+        if not known:
+            self.set_status(message="There are no known variables to save. Set some first.", error=True)
+            return
+        builtin_names: set[str] = set(builtin_profiles())
+
+        def check_name(text: str) -> str | None:
+            """Return a message when the name is not usable."""
+            if not NAME_PATTERN.match(text):
+                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
+            if text in builtin_names:
+                return f"'{text}' is a built-in profile. Use another name."
+            if text in existing:
+                return f"A profile named '{text}' exists. Use another name, or delete it first."
+            return None
+
+        def got_name(name: str | None) -> None:
+            """Continue with the key question when the values hold a key."""
+            if not name:
+                return
+            holds_key: bool = any(BY_NAME[k].secret for k in known)
+            if not holds_key:
+                self._save_snapshot(name=name, env=env, include_keys=True)
+                return
+
+            def got_key_answer(include: bool | None) -> None:
+                """Save the profile with or without the key."""
+                self._save_snapshot(name=name, env=env, include_keys=bool(include))
+
+            self.push_screen(
+                screen=ConfirmScreen(
+                    title=f"Include the key in profile '{name}'?",
+                    question="yes: one command switches endpoint and key together.\n"
+                    "no: the profile holds no key. You set the key after each apply.",
+                    hint="profiles.toml is a second plaintext copy of the key (mode 0600). Do not share it.",
+                ),
+                callback=got_key_answer,
+            )
+
+        self.push_screen(
+            screen=InputScreen(
+                title="Save the current values as a profile",
+                prompt=f"Name for the profile (from {self.target.settings_file.name})",
+                check=check_name,
+                placeholder="work-deepseek",
+            ),
+            callback=got_name,
+        )
+
+    def _save_snapshot(self, name: str, env: dict[str, str], include_keys: bool) -> None:
+        """Write the profile, say so, and open the list again."""
+        try:
+            path: Path = save_profile(profile=snapshot(name=name, env=env, include_keys=include_keys))
+        except (ProfileError, ValueError) as exc:
+            self.set_status(message=str(exc), error=True)
+            return
+        self.set_status(message=f"Saved profile '{name}' in {path}.")
+        self.action_profiles()
+
+    def _start_delete(self, name: str) -> None:
+        """Ask, then delete one of your profiles."""
+        if name in builtin_profiles():
+            self.set_status(message=f"'{name}' is a built-in profile and cannot be deleted.", error=True)
+            return
+
+        def delete_when_confirmed(confirmed: bool | None) -> None:
+            """Delete the profile only after a yes."""
+            if not confirmed:
+                self.set_status(message="Nothing deleted.")
+                return
+            try:
+                delete_profile(name=name)
+            except ProfileError as exc:
+                self.set_status(message=str(exc), error=True)
+                return
+            self.set_status(message=f"Deleted profile '{name}'.")
+            self.action_profiles()
+
+        self.push_screen(
+            screen=ConfirmScreen(
+                title="Delete profile",
+                question=f"Delete your profile '{name}'? The settings file is not changed.",
+                hint="",
+            ),
+            callback=delete_when_confirmed,
+        )
+
+    # -- target -------------------------------------------------------------
 
     def action_switch_dir(self) -> None:
-        """Open the config directory list and switch to the chosen one."""
+        """Open the list of config directories, with an entry for any other settings file."""
         dirs: list[Path] = config.discover_config_dirs()
         if self.target.config_dir not in dirs:
             dirs.insert(0, self.target.config_dir)
         options: list[tuple[str, str]] = [(str(d), str(d)) for d in dirs]
+        options.append((OTHER_FILE, "(another settings file: type a path)"))
 
-        def use_chosen_dir(choice: str | None) -> None:
-            """Switch to the chosen config directory."""
-            if choice:
-                self.target = Target.from_config_dir(config_dir=Path(choice))
-                self.refresh_rows()
-                self.set_status(message=f"Config dir: {choice}")
+        def use_chosen(choice: str | None) -> None:
+            """Switch to the chosen directory, or ask for a file path."""
+            if choice is None:
+                return
+            if choice == OTHER_FILE:
+                self._ask_for_file()
+                return
+            self.target = Target.from_config_dir(config_dir=Path(choice))
+            self.refresh_rows()
+            self.set_status(message=f"Config dir: {choice}")
 
-        self.push_screen(screen=PickScreen(title="Switch config directory", options=options), callback=use_chosen_dir)
+        self.push_screen(screen=PickScreen(title="Switch config directory", options=options), callback=use_chosen)
+
+    def _ask_for_file(self) -> None:
+        """Ask for the path of a settings file and make it the target."""
+
+        def check_path(text: str) -> str | None:
+            """Return a message when the path is not usable."""
+            if not text:
+                return "Type a path."
+            if Path(text).expanduser().is_dir():
+                return "That is a directory. Type the path of a settings file."
+            return None
+
+        def use_file(text: str | None) -> None:
+            """Make the typed file the target."""
+            if not text:
+                return
+            self.target = Target.from_file(
+                settings_file=Path(text), known_dirs=config.discover_config_dirs()
+            )
+            self.refresh_rows()
+            kind: str = "user level" if self.target.user_level else "project file"
+            self.set_status(message=f"File: {self.target.settings_file} ({kind})")
+
+        self.push_screen(
+            screen=InputScreen(
+                title="Open a settings file",
+                prompt="Path of a settings file, for example .claude/settings.local.json",
+                check=check_path,
+            ),
+            callback=use_file,
+        )
 
     def action_help(self) -> None:
         """Open the help screen with the keys."""
@@ -419,7 +727,7 @@ class EnvEditorApp(App[None]):
         return body
 
 
-def run(config_dir: Path) -> int:
-    """Open the interface for one config directory."""
-    EnvEditorApp(config_dir=config_dir).run()
+def run(target: Target) -> int:
+    """Open the interface for one target (a settings file)."""
+    EnvEditorApp(target=target).run()
     return 0

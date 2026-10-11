@@ -71,8 +71,8 @@ claude-code-env-editor help set
 | `e` / `enter` | Edit the selected variable |
 | `v` | Verify the endpoint, the key, and the model |
 | `r` | Reveal or hide secrets |
-| `p` | Apply a preset |
-| `d` | Switch config directory |
+| `p` | Profiles: apply, save the current values, delete |
+| `d` | Switch config directory, or open another settings file |
 | `x` | Remove the variable (asks first) |
 | `?` | Help |
 | `q` | Quit |
@@ -116,6 +116,20 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
 - The old file is kept as `settings.json.bak`, next to the settings file.
 - `preset NAME` still works. It runs `profile apply NAME --merge --yes`, as before.
 
+### Profiles in the TUI
+
+Press `p` for the profile list. The list names the target file at the top.
+
+| Key | Action |
+|---|---|
+| `enter` | Apply in replace mode. A dialog first shows every change, with secrets masked. |
+| `m` | Apply in merge mode |
+| `s` | Save the current values as a new profile. The tool asks for a name and, when a key is set, asks if the key goes into the profile. |
+| `x` | Delete one of your profiles (asks first) |
+
+A profile with a key is refused for a file that may be committed. The dialog says why.
+The CLI option `--allow-secret-in-shared-file` is the only way to override that.
+
 ### Manage profiles
 
 - A name has letters, digits, `.`, `-`, and `_`. A built-in name cannot be replaced.
@@ -157,7 +171,7 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 ![Edit dialog for one variable](docs/screenshots/edit.svg)
 
-**Presets.** Press `p` to fill the endpoint and the model names.
+**Profiles.** Press `p` to apply a profile, save the current values, or delete a profile.
 
 ![Preset list](docs/screenshots/preset.svg)
 
@@ -223,7 +237,8 @@ The tool finds config directories from three sources. The name does not matter.
   on macOS, `%APPDATA%` on Windows).
 - A scan: hidden directories in your home that hold `.claude.json`, or `settings.json` and a `projects` directory.
 
-Run `claude-code-env-editor dirs` to list them. Inside the TUI press `d` to switch between them.
+Run `claude-code-env-editor dirs` to list them. Inside the TUI press `d` to switch between them, or to type the path of any
+settings file (for example `.claude/settings.local.json` of a project). `claude-code-env-editor tui --file PATH` opens one directly.
 
 ## Security
 
