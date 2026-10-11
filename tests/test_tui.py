@@ -316,7 +316,7 @@ async def test_verify_on_the_list_uses_the_endpoint_of_the_profile_under_the_cur
         seen.append(endpoint.host)
         return [Check(name="url", status="pass", detail="x")]
 
-    monkeypatch.setattr("claude_code_env_editor.tui.pages.verify", fake_verify)
+    monkeypatch.setattr("claude_code_env_editor.tui.pages.profile_list.verify", fake_verify)
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -336,7 +336,7 @@ async def test_closing_the_verify_dialog_before_the_answer_does_not_crash(
         time.sleep(0.4)
         return [Check(name="url", status="pass", detail="x")]
 
-    monkeypatch.setattr("claude_code_env_editor.tui.pages.verify", slow_verify)
+    monkeypatch.setattr("claude_code_env_editor.tui.pages.profile_list.verify", slow_verify)
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
