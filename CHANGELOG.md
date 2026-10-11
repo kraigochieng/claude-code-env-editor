@@ -1,6 +1,26 @@
 # CHANGELOG
 
 
+## v0.11.0 (2026-10-11)
+
+### Features
+
+- **profiles**: Make the templates normal profiles and add rename
+  ([`4e21962`](https://github.com/kraigochieng/claude-code-env-editor/commit/4e2196275e38f4e5f27032fdf83e41997137eb1e))
+
+The templates are copied into profiles.toml on first use, and once for a file from an older version,
+  under names that are free. A marker stops a second copy, so a profile that you delete stays
+  deleted. Every profile can be edited, renamed, and deleted. The built-in flag, the read-only rule,
+  and the Kind column are removed.
+
+profile rename OLD NEW renames a profile and keeps its position, its variables, and its note.
+  profile templates lists the templates. save --from and preset accept a template name, also after
+  the template was removed from the list. r in the TUI list renames the profile under the cursor.
+  README describes templates.
+
+Closes #60
+
+
 ## v0.10.0 (2026-10-11)
 
 ### Documentation
