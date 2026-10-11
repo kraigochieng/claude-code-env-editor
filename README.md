@@ -1,7 +1,7 @@
 # claude-code-env-editor
 
-A terminal UI to view, edit, and verify the Anthropic variables that Claude Code reads.
-Point Claude Code at another endpoint without hand-editing JSON or shell files.
+A terminal UI to view, edit, verify, and switch the Anthropic variables that Claude Code reads.
+Point Claude Code at another endpoint with one profile, without hand-editing JSON or shell files.
 
 ## What Claude Code already does
 
@@ -18,7 +18,8 @@ Use Claude Code itself for these. This tool does not replace them.
 Claude Code has no menu for the `env` block of `settings.json`, and no command to test an endpoint.
 This tool gives you:
 
-- **Provider setup.** One preset sets the base URL, the model aliases, and the other variables together.
+- **Profiles.** One profile sets the base URL, the model aliases, the key, and the other variables together.
+  Applying a profile removes the values of the previous endpoint, so no stale model name or key stays behind.
 - **Verify.** It checks the URL, the key, and the model name before you start a session, and explains a failure.
 - **The right key variable.** It shows `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_API_KEY` based on the base URL.
 - **Safe editing.** It validates values, masks secrets, and writes the file atomically with mode `0600`.
@@ -173,7 +174,11 @@ The screenshots use demo data: a made-up key and a made-up config directory. The
 
 **Profiles.** Press `p` to apply a profile, save the current values, or delete a profile.
 
-![Preset list](docs/screenshots/preset.svg)
+![Profile list](docs/screenshots/profiles.svg)
+
+**Apply.** Enter shows every change before it writes. Secrets are masked. A key of another endpoint is removed.
+
+![Apply dialog with the changes](docs/screenshots/apply.svg)
 
 **Verify.** Press `v` to check the URL, the key, and the model name.
 
@@ -202,12 +207,12 @@ in the `env` block overrides `ANTHROPIC_MODEL` exported in the shell. When the s
 shows `settings (shell differs)`. Claude Code ignores the shell value.
 It writes only the `env` block. All other keys in the file stay as they were.
 
-## Presets
+## Built-in profiles
 
-`claude-code-env-editor preset` lists them: Anthropic, OpenRouter, Z.ai, Moonshot, DeepSeek,
+`claude-code-env-editor profile` lists them: Anthropic, OpenRouter, Z.ai, Moonshot, DeepSeek,
 LiteLLM, Ollama. **Check each URL and model name before you rely on it. Providers change them.**
-The DeepSeek preset sets the base URL, all model aliases, the subagent model, the effort level, and the
-compact window. It never sets a key.
+The DeepSeek profile sets the base URL, all model aliases, the subagent model, the effort level, and the
+compact window. A built-in profile never holds a key. The older `preset` command is an alias that merges.
 
 ## Several Claude Code logins
 
@@ -227,7 +232,7 @@ To edit another login, name its directory:
 
 ```sh
 claude-code-env-editor --config-dir ~/.claude-personal show
-claude-code-env-editor --config-dir ~/.claude-personal preset deepseek
+claude-code-env-editor --config-dir ~/.claude-personal profile apply deepseek
 ```
 
 The tool finds config directories from three sources. The name does not matter.
@@ -245,8 +250,10 @@ settings file (for example `.claude/settings.local.json` of a project). `claude-
 - Secrets (`ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`) show masked. The tool never logs them.
 - `settings.json` is written atomically with mode `0600`. The old file stays as `settings.json.bak`.
 - Claude Code reads keys from `settings.json` or the environment, so that is where the tool writes them.
-  The tool keeps no second copy. Any program that runs as you can read the file. Keep the file private.
+  Any program that runs as you can read the file. Keep the file private.
   Use `set --no-write-secret` to keep a key out of the file. The tool prints an `export` line instead.
+- A profile can hold a copy of a key in `profiles.toml` (mode `0600`, `.gitignore` next to it). Leave the key out
+  with `profile save --no-key` or the TUI question. A profile with a key is never written to a file that may be committed.
 - Verify sends requests only to your `ANTHROPIC_BASE_URL`, shows the host first, and never follows a
   redirect. It warns about `http://` URLs that are not local.
 - Secrets are never read from command arguments, so they stay out of shell history.
