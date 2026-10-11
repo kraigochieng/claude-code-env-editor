@@ -16,7 +16,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from claude_code_env_editor import __version__, config
-from claude_code_env_editor.apply import ApplyPlan, Mode, format_plan, plan_apply, secret_target_problem
+from claude_code_env_editor.apply import ApplyPlan, format_plan, plan_apply, secret_target_problem
 from claude_code_env_editor.auth import visible_rows
 from claude_code_env_editor.destinations import (
     Destination,
@@ -231,7 +231,7 @@ class BasePage(Screen[None]):
 
     # -- apply -------------------------------------------------------------
 
-    def begin_apply(self, name: str, mode: Mode) -> None:
+    def begin_apply(self, name: str) -> None:
         """Ask where to apply the profile, then show the changes."""
         try:
             profile: Profile = get_profile(name=name)
@@ -239,13 +239,16 @@ class BasePage(Screen[None]):
             self.set_status(message=str(exc), error=True)
             return
         self.pick_destination(
-            title=f"Apply '{name}' ({mode} mode) to which place?",
+            title=f"Apply '{name}' to which place?",
             profile=profile,
-            on_chosen=lambda place: self.start_apply(profile=profile, mode=mode, destination=place),
+            on_chosen=lambda place: self.start_apply(profile=profile, destination=place),
         )
 
-    def start_apply(self, profile: Profile, mode: Mode, destination: Destination) -> None:
-        """Show what the profile changes in the destination file and write it after a yes."""
+    def start_apply(self, profile: Profile, destination: Destination) -> None:
+        """Show what the profile changes in the destination file and write it after a yes.
+
+        The apply replaces the known variables, so nothing of the previous endpoint stays.
+        """
         target: Target = destination.to_target()
         try:
             current: dict[str, str] = config.load_env(settings_file=target.settings_file)
@@ -256,7 +259,7 @@ class BasePage(Screen[None]):
         if problem:
             self.set_status(message=f"Refused: {problem}", error=True)
             return
-        plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode=mode)
+        plan: ApplyPlan = plan_apply(profile=profile, current_env=current, mode="replace")
         if not plan.writes:
             self.set_status(message=f"Nothing to change: {destination.label} already matches '{profile.name}'.")
             return
@@ -277,12 +280,12 @@ class BasePage(Screen[None]):
                 return
             self.refresh_page()
             self.set_status(
-                message=f"Applied '{profile.name}' ({mode}) to {destination.label}. The old file is kept as .bak."
+                message=f"Applied '{profile.name}' to {destination.label}. The old file is kept as .bak."
             )
 
         self.app.push_screen(
             screen=ConfirmScreen(
-                title=f"Apply '{profile.name}' ({mode} mode) to {destination.label}?",
+                title=f"Apply '{profile.name}' to {destination.label}?",
                 question="\n".join(lines),
                 hint="The old file is kept as a .bak copy. Secrets are masked.",
             ),
@@ -379,7 +382,6 @@ class ProfileListPage(BasePage):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="a", action="apply", description="apply"),
-        Binding(key="m", action="merge", description="merge"),
         Binding(key="c", action="copy", description="copy"),
         Binding(key="v", action="verify", description="verify"),
         Binding(key="n", action="new", description="new"),
@@ -407,8 +409,7 @@ class ProfileListPage(BasePage):
         """Return the keys of this page."""
         return [
             ("right / enter", "Open the profile and see its variables"),
-            ("a", "Apply the profile to a place you choose (replace mode)"),
-            ("m", "Apply the profile in merge mode"),
+            ("a", "Apply the profile to a place you choose"),
             ("c", "Copy the profile under a new name"),
             ("v", "Verify the endpoint, the key, and the model of the profile"),
             ("n", "New profile from scratch"),
@@ -472,16 +473,10 @@ class ProfileListPage(BasePage):
         self.app.push_screen(VariablesPage(profile=self.profiles[name]))
 
     def action_apply(self) -> None:
-        """Apply the profile under the cursor in replace mode."""
+        """Apply the profile under the cursor."""
         name: str | None = self.selected_name()
         if name is not None:
-            self.begin_apply(name=name, mode="replace")
-
-    def action_merge(self) -> None:
-        """Apply the profile under the cursor in merge mode."""
-        name: str | None = self.selected_name()
-        if name is not None:
-            self.begin_apply(name=name, mode="merge")
+            self.begin_apply(name=name)
 
     def action_new(self) -> None:
         """Ask for a name, create an empty profile, and open it so that its variables can be set."""

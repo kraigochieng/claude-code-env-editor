@@ -428,29 +428,43 @@ async def test_escape_in_the_place_list_writes_nothing(tmp_path: Path, profiles_
     assert not (tmp_path / "settings.json").exists()
 
 
-async def test_m_applies_in_merge_mode(tmp_path: Path, profiles_file: Path) -> None:
+async def test_there_is_no_merge_key_and_the_titles_name_no_mode(tmp_path: Path, profiles_file: Path) -> None:
     write_settings(tmp_path, {"API_TIMEOUT_MS": "5000"})
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await move_to_profile(app, pilot, "openrouter")
-        await pilot.press("m")
+        await pilot.press("m")  # m is not a key of the list any more
         await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage)
+        keys: set[str] = {b.key for b in app.screen.BINDINGS if isinstance(b, Binding)}
+        assert "m" not in keys
+        await pilot.press("question_mark")
+        await pilot.pause()
+        assert "merge" not in text_of(app, "#body").lower()
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        assert "(replace mode)" not in text_of(app, ".heading") and "merge" not in text_of(app, ".heading").lower()
         await choose(app, pilot, "0")
+        assert screen_name(app) == "ConfirmScreen"
+        assert "mode" not in text_of(app, ".heading")
         await pilot.press("y")
         await pilot.pause()
     env: dict[str, str] = read_env(tmp_path / "settings.json")
-    assert env["API_TIMEOUT_MS"] == "5000" and env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
+    assert "API_TIMEOUT_MS" not in env and env["ANTHROPIC_BASE_URL"] == "https://openrouter.ai/api"
 
 
-async def test_the_profile_page_has_no_apply_merge_copy_or_verify_keys(tmp_path: Path, profiles_file: Path) -> None:
+
+async def test_the_profile_page_has_no_apply_copy_or_verify_keys(tmp_path: Path, profiles_file: Path) -> None:
     app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
     async with app.run_test() as pilot:
         await pilot.pause()
         await open_profile(app, pilot, "openrouter")
         keys: set[str] = {b.key for b in app.screen.BINDINGS if isinstance(b, Binding)}
         assert keys == {"e", "x", "escape", "question_mark", "q"}
-        for key in ("a", "m", "c", "v"):
+        for key in ("a", "c", "v"):
             await pilot.press(key)
             await pilot.pause()
             assert isinstance(app.screen, VariablesPage)  # no dialog opened
