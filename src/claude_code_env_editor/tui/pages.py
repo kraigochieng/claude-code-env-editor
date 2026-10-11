@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Final, cast
 
@@ -18,6 +18,15 @@ from textual.widgets import DataTable, Footer, Static
 from claude_code_env_editor import __version__, config
 from claude_code_env_editor.apply import ApplyPlan, Mode, format_plan, plan_apply, secret_target_problem
 from claude_code_env_editor.auth import describe, visible_rows
+from claude_code_env_editor.destinations import (
+    Destination,
+    DestinationKind,
+    applied_in,
+    known_variables,
+    login_destinations,
+    project_destination,
+    short_path,
+)
 from claude_code_env_editor.envvars import (
     BY_NAME,
     CHOICE,
@@ -36,6 +45,7 @@ from claude_code_env_editor.profiles import (
     rename_profile,
     save_profile,
     snapshot,
+    templates,
 )
 from claude_code_env_editor.sources import FileSource, ProfileSource, VariableSource, matching_profile
 from claude_code_env_editor.target import Target
@@ -54,6 +64,7 @@ if TYPE_CHECKING:
     from claude_code_env_editor.tui.app import EnvEditorApp
 
 SECRET_NAMES: Final[tuple[str, ...]] = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")
+PROJECT_FOLDER: Final[str] = "__project__"
 
 
 class BasePage(Screen[None]):
@@ -208,8 +219,11 @@ class BasePage(Screen[None]):
         )
 
     def start_save(self) -> None:
-        """Ask for a name, then for the key question, then save the file's values as a profile."""
-        env: dict[str, str] = self.file_env()
+        """Save the values of the target file as a profile."""
+        self.save_values_as_profile(env=self.file_env(), source_name=self.target.settings_file.name)
+
+    def save_values_as_profile(self, env: Mapping[str, str], source_name: str, suggested: str = "") -> None:
+        """Ask for a name, then for the key question, then save the known values of env as a profile."""
         try:
             existing: set[str] = set(load_profiles())
         except ProfileError as exc:
@@ -253,14 +267,14 @@ class BasePage(Screen[None]):
         self.app.push_screen(
             screen=InputScreen(
                 title="Save the current values as a profile",
-                prompt=f"Name for the profile (from {self.target.settings_file.name})",
+                prompt=f"Name for the profile (from {source_name})",
                 check=check_name,
-                placeholder="work-deepseek",
+                placeholder=suggested or "work-deepseek",
             ),
             callback=got_name,
         )
 
-    def save_snapshot(self, name: str, env: dict[str, str], include_keys: bool) -> None:
+    def save_snapshot(self, name: str, env: Mapping[str, str], include_keys: bool) -> None:
         """Write the profile and say so."""
         try:
             path: Path = save_profile(profile=snapshot(name=name, env=env, include_keys=include_keys))
@@ -294,6 +308,61 @@ class BasePage(Screen[None]):
             ),
             callback=delete_when_confirmed,
         )
+
+    # -- places ------------------------------------------------------------
+
+    def known_destinations(self) -> list[Destination]:
+        """Return the login folders, and the target file when it is not one of them."""
+        places: list[Destination] = login_destinations()
+        if self.target.settings_file not in [d.settings_file for d in places]:
+            kind: DestinationKind = "login" if self.target.user_level else "project"
+            places.append(
+                Destination(
+                    label=short_path(path=self.target.settings_file),
+                    settings_file=self.target.settings_file,
+                    kind=kind,
+                    config_dir=self.target.config_dir,
+                )
+            )
+        return places
+
+    def pick_destination(self, title: str, on_chosen: Callable[[Destination], None]) -> None:
+        """Let the user choose a login folder, or type a project folder, and pass the place to on_chosen."""
+        places: list[Destination] = self.known_destinations()
+        options: list[tuple[str, str]] = [(str(index), place.label) for index, place in enumerate(places)]
+        options.append((PROJECT_FOLDER, "(a project folder: type its path)"))
+
+        def chosen(choice: str | None) -> None:
+            """Pass the chosen login folder on, or ask for the project folder."""
+            if choice is None:
+                return
+            if choice != PROJECT_FOLDER:
+                on_chosen(places[int(choice)])
+                return
+
+            def check_folder(text: str) -> str | None:
+                """Return a message when the folder is not usable."""
+                if not text:
+                    return "Type the path of a project folder."
+                if not Path(text).expanduser().is_dir():
+                    return "That folder does not exist."
+                return None
+
+            def folder_typed(text: str | None) -> None:
+                """Pass the project place on."""
+                if text:
+                    on_chosen(project_destination(folder=Path(text)))
+
+            self.app.push_screen(
+                screen=InputScreen(
+                    title="Project folder",
+                    prompt="Path of the project folder. The file is .claude/settings.local.json inside it.",
+                    check=check_folder,
+                ),
+                callback=folder_typed,
+            )
+
+        self.app.push_screen(screen=PickScreen(title=title, options=options), callback=chosen)
 
     # -- target ------------------------------------------------------------
 
@@ -404,6 +473,7 @@ class ProfileListPage(BasePage):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding(key="a", action="apply", description="apply"),
         Binding(key="m", action="merge", description="merge"),
+        Binding(key="n", action="new", description="new"),
         Binding(key="c", action="current", description="current file"),
         Binding(key="s", action="save", description="save"),
         Binding(key="r", action="rename", description="rename"),
@@ -423,7 +493,7 @@ class ProfileListPage(BasePage):
 
     def columns(self) -> tuple[str, ...]:
         """Return the column titles."""
-        return ("Profile", "Endpoint", "Key", "Note")
+        return ("Profile", "Endpoint", "Key", "Applied in", "Note")
 
     def start_message(self) -> str:
         """Return the first status text."""
@@ -435,6 +505,7 @@ class ProfileListPage(BasePage):
             ("enter", "Open the profile and see its variables"),
             ("a", "Apply the profile to the file (replace mode)"),
             ("m", "Apply the profile in merge mode"),
+            ("n", "New profile: from a template, from a folder, or a copy"),
             ("c", "Open the current values of the file"),
             ("s", "Save the current values of the file as a profile"),
             ("r", "Rename the profile"),
@@ -468,6 +539,9 @@ class ProfileListPage(BasePage):
         env: dict[str, str] = self.file_env()
         self.active = matching_profile(env=env, profiles=self.profiles)
         self.names = list(self.profiles)
+        where: dict[str, list[Destination]] = applied_in(
+            profiles=self.profiles, destinations=self.known_destinations()
+        )
         table: DataTable[Text] = self.query_one(selector=DataTable)
         table.clear()
         for profile in self.profiles.values():
@@ -476,6 +550,7 @@ class ProfileListPage(BasePage):
                 Text(text=f"{profile.name}{mark}", style="bold"),
                 Text(text=profile.host),
                 Text(text="key" if profile.has_key else "no key", style="" if profile.has_key else "dim"),
+                Text(text=", ".join(d.label for d in where.get(profile.name, [])) or "-", style="#7fb069"),
                 Text(text=profile.note, style="dim"),
                 key=profile.name,
             )
@@ -514,6 +589,63 @@ class ProfileListPage(BasePage):
     def action_save(self) -> None:
         """Save the values of the file as a new profile."""
         self.start_save()
+
+    def action_new(self) -> None:
+        """Start a new profile from a template, from a folder, or as a copy of a profile."""
+        options: list[tuple[str, str]] = [
+            ("template", "From a template"),
+            ("folder", "Import the values of a folder"),
+            ("copy", "Copy a profile"),
+        ]
+
+        def chosen(choice: str | None) -> None:
+            """Go on with the chosen source."""
+            if choice == "template":
+                self.new_from_template()
+            elif choice == "folder":
+                self.pick_destination(title="Import from which place?", on_chosen=self.new_from_destination)
+            elif choice == "copy":
+                self.new_from_copy()
+
+        self.app.push_screen(screen=PickScreen(title="New profile", options=options), callback=chosen)
+
+    def new_from_template(self) -> None:
+        """Pick a template, then name the new profile."""
+        available: dict[str, Profile] = templates()
+        options: list[tuple[str, str]] = [(name, f"{name:<14} {p.note}") for name, p in available.items()]
+
+        def chosen(name: str | None) -> None:
+            """Ask for the name of the new profile."""
+            if name is not None:
+                self.save_values_as_profile(
+                    env=available[name].variables, source_name=f"template {name}", suggested=name
+                )
+
+        self.app.push_screen(screen=PickScreen(title="Which template?", options=options), callback=chosen)
+
+    def new_from_copy(self) -> None:
+        """Pick one of your profiles, then name the copy."""
+        options: list[tuple[str, str]] = [(name, f"{name:<20} {p.host}") for name, p in self.profiles.items()]
+
+        def chosen(name: str | None) -> None:
+            """Ask for the name of the copy."""
+            if name is not None:
+                self.save_values_as_profile(
+                    env=self.profiles[name].variables, source_name=f"profile {name}", suggested=f"{name}-copy"
+                )
+
+        self.app.push_screen(screen=PickScreen(title="Copy which profile?", options=options), callback=chosen)
+
+    def new_from_destination(self, place: Destination) -> None:
+        """Import the known values of a place as a new profile."""
+        values: dict[str, str] | None = known_variables(destination=place)
+        if values is None:
+            self.set_status(message=f"{place.label} cannot be read.", error=True)
+            return
+        if not values:
+            self.set_status(message=f"{place.label} has no known variables to import.", error=True)
+            return
+        self.save_values_as_profile(env=values, source_name=place.label)
 
     def action_delete(self) -> None:
         """Delete the profile under the cursor."""

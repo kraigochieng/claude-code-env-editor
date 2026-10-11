@@ -16,6 +16,17 @@ from claude_code_env_editor.tui.pages import ProfileListPage, VariablesPage
 from claude_code_env_editor.verify import Check, Endpoint
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Give every test its own home directory, so the real logins and registry stay out of the tests."""
+    home: Path = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    return home
+
+
 @pytest.fixture
 def profiles_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the tool at a profiles file in a temporary directory."""
@@ -601,3 +612,138 @@ async def test_d_can_open_another_settings_file(tmp_path: Path, profiles_file: P
 def test_tui_command_accepts_a_file_option() -> None:
     args = cli.build_parser().parse_args(["tui", "--file", "x.json"])
     assert args.file == Path("x.json")
+
+
+# -- applied in, and new profiles --------------------------------------------
+
+
+def make_login(home: Path, name: str, env: dict[str, str]) -> Path:
+    directory: Path = home / name
+    directory.mkdir(parents=True)
+    (directory / ".claude.json").write_text("{}")
+    (directory / "settings.json").write_text(json.dumps({"env": env}))
+    return directory
+
+
+def cell(app: EnvEditorApp, row_key: str, column: int) -> str:
+    table: DataTable[Text] = app.screen.query_one(selector=DataTable)
+    return str(table.get_row(row_key=row_key)[column])
+
+
+async def choose(app: EnvEditorApp, pilot: Pilot[None], option_id: str) -> None:
+    """Highlight the option with this id in the open list and press Enter."""
+    option_list: OptionList = app.screen.query_one(selector=OptionList)
+    ids: list[str | None] = [option_list.get_option_at_index(index=i).id for i in range(option_list.option_count)]
+    option_list.highlighted = ids.index(option_id)
+    await pilot.pause()
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+async def test_applied_in_names_the_logins_whose_file_matches(
+    tmp_path: Path, profiles_file: Path, isolated_home: Path
+) -> None:
+    deepseek: dict[str, str] = templates()["deepseek"].variables
+    make_login(isolated_home, ".claude-work", deepseek)
+    make_login(isolated_home, ".acme-login", {"ANTHROPIC_MODEL": "something-else"})
+    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert "~/.claude-work" in cell(app, "deepseek", 3)
+        assert cell(app, "openrouter", 3) == "-"
+
+
+async def test_n_creates_a_profile_from_a_template(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await choose(app, pilot, "template")
+        await choose(app, pilot, "ollama")
+        assert screen_name(app) == "InputScreen"
+        app.screen.query_one(selector=Input).value = "my-ollama"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, ProfileListPage) and "my-ollama" in app.screen.names
+    saved: dict[str, Profile] = load_profiles(path=profiles_file)
+    assert saved["my-ollama"].variables == templates()["ollama"].variables
+
+
+async def test_n_imports_the_values_of_a_login_folder_with_its_key(
+    tmp_path: Path, profiles_file: Path, isolated_home: Path
+) -> None:
+    values: dict[str, str] = {"ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "ANTHROPIC_AUTH_TOKEN": "sk-123456789012"}
+    make_login(isolated_home, ".claude-work", values)
+    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await choose(app, pilot, "folder")
+        option_list: OptionList = app.screen.query_one(selector=OptionList)
+        labels: list[str] = [str(option_list.get_option_at_index(index=i).prompt) for i in range(option_list.option_count)]
+        await choose(app, pilot, str(labels.index("~/.claude-work")))
+        assert screen_name(app) == "InputScreen"
+        app.screen.query_one(selector=Input).value = "imported"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen_name(app) == "ConfirmScreen"  # the key question
+        await pilot.press("y")
+        await pilot.pause()
+    assert load_profiles(path=profiles_file)["imported"].variables == values
+
+
+async def test_n_imports_the_local_settings_of_a_project_folder(
+    tmp_path: Path, profiles_file: Path, isolated_home: Path
+) -> None:
+    project: Path = tmp_path / "app"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.local.json").write_text(json.dumps({"env": {"ANTHROPIC_MODEL": "project-model"}}))
+    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await choose(app, pilot, "folder")
+        await choose(app, pilot, "__project__")
+        assert screen_name(app) == "InputScreen"
+        app.screen.query_one(selector=Input).value = str(project)
+        await pilot.press("enter")
+        await pilot.pause()
+        app.screen.query_one(selector=Input).value = "from-project"
+        await pilot.press("enter")
+        await pilot.pause()
+    assert load_profiles(path=profiles_file)["from-project"].variables == {"ANTHROPIC_MODEL": "project-model"}
+
+
+async def test_n_refuses_a_folder_without_known_variables(
+    tmp_path: Path, profiles_file: Path, isolated_home: Path
+) -> None:
+    make_login(isolated_home, ".empty", {"MY_OWN": "1"})
+    app: EnvEditorApp = EnvEditorApp(config_dir=isolated_home / ".claude")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await choose(app, pilot, "folder")
+        option_list: OptionList = app.screen.query_one(selector=OptionList)
+        labels: list[str] = [str(option_list.get_option_at_index(index=i).prompt) for i in range(option_list.option_count)]
+        await choose(app, pilot, str(labels.index("~/.empty")))
+        assert isinstance(app.screen, ProfileListPage)
+        assert "no known variables" in text_of(app, "#status")
+
+
+async def test_n_copies_a_profile(tmp_path: Path, profiles_file: Path) -> None:
+    app: EnvEditorApp = EnvEditorApp(config_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        await choose(app, pilot, "copy")
+        await choose(app, pilot, "deepseek")
+        app.screen.query_one(selector=Input).value = "ds-two"
+        await pilot.press("enter")
+        await pilot.pause()
+    saved: dict[str, Profile] = load_profiles(path=profiles_file)
+    assert saved["ds-two"].variables == saved["deepseek"].variables
