@@ -1,6 +1,21 @@
 # CHANGELOG
 
 
+## v0.13.0 (2026-10-11)
+
+### Features
+
+- **tui**: Show where each profile is applied and add a new profile flow
+  ([`d1cacda`](https://github.com/kraigochieng/claude-code-env-editor/commit/d1cacdadfacc711035e198c3b4be9b197872b045))
+
+The profile list has an Applied in column with the login folders whose file matches the profile. n
+  creates a profile from a template, from the values of a folder (a login, or a project folder's
+  .claude/settings.local.json), or as a copy of a profile. The key question shows when imported
+  values hold a key.
+
+Closes #64
+
+
 ## v0.12.0 (2026-10-11)
 
 ### Features
