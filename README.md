@@ -74,8 +74,7 @@ The TUI has two pages. Neither page shows a file or a config directory. A folder
 | Key | Action |
 |---|---|
 | `right arrow` / `enter` | Open the profile and see its variables |
-| `a` | Apply the profile (replace mode). You choose the place, then review the changes |
-| `m` | Apply the profile in merge mode |
+| `a` | Apply the profile. You choose the place, then review the changes |
 | `c` | Copy the profile under a new name |
 | `v` | Verify the endpoint, the key, and the model of the profile |
 | `n` | New profile from scratch: type a name, then set its variables |
@@ -91,7 +90,7 @@ The TUI has two pages. Neither page shows a file or a config directory. A folder
 | `x` | Remove the variable (asks first) |
 | `left arrow` / `esc` | Back to the profile list |
 
-Apply, merge, copy, and verify are keys of the profile list only. A click outside a dialog closes it, like `Esc`
+Apply, copy, and verify are keys of the profile list only. A click outside a dialog closes it, like `Esc`
 (a confirm dialog answers no, so nothing is written).
 
 ## Profiles
@@ -128,7 +127,8 @@ claude-code-env-editor profile apply deepseek --dry-run        # show the change
   Code: after a replace, a removed `ANTHROPIC_MODEL` is gone and Claude Code uses its default model.
 - **A key stays when the endpoint host does not change**, because it goes to the same place. A key is removed when
   the host changes, so it never goes to another provider.
-- **`--merge`** changes only the listed variables. Old values stay. The tool warns when a key would go to a new host.
+- **`--merge`** (CLI only) changes only the listed variables. Old values stay. The tool warns when a key would go to a new host.
+  The TUI has no merge: its apply always replaces.
 - **Custom variables** in the `env` block are never touched.
 - **Keys in a shared file.** A profile with a key is refused for a file that may be committed, for example
   `.claude/settings.json` of a project. Use `.claude/settings.local.json` or a config directory. The option
