@@ -9,6 +9,7 @@ from claude_code_env_editor.profiles import (
     delete_profile,
     get_profile,
     load_profiles,
+    name_problem,
     rename_profile,
     save_profile,
     snapshot,
@@ -244,3 +245,26 @@ def test_overwriting_the_same_name_keeps_one_profile(tmp_path: Path) -> None:
     save_profile(profile=Profile(name="work", variables={"ANTHROPIC_MODEL": "b"}), path=path, overwrite=True)
     names: list[str] = [n for n in load_profiles(path=path) if n == "work"]
     assert names == ["work"] and load_profiles(path=path)["work"].variables == {"ANTHROPIC_MODEL": "b"}
+
+
+# -- name_problem ------------------------------------------------------------
+
+
+def test_name_problem_accepts_a_free_name() -> None:
+    assert name_problem(name="work-ds", taken={"deepseek", "zai"}) is None
+
+
+@pytest.mark.parametrize("bad", ["", "-start", "has space", "a/b", "x" * 65])
+def test_name_problem_refuses_a_name_that_breaks_the_format(bad: str) -> None:
+    assert "Use letters, digits" in str(name_problem(name=bad, taken=set()))
+
+
+def test_name_problem_refuses_a_taken_name_also_in_another_case() -> None:
+    assert name_problem(name="zai", taken={"zai"}) == "A profile named 'zai' exists. Use another name."
+    assert "exists" in str(name_problem(name="ZAI", taken={"zai"}))
+
+
+def test_name_problem_lets_a_profile_keep_its_own_name_when_the_caller_leaves_it_out() -> None:
+    taken: set[str] = {"zai", "work"}
+    assert name_problem(name="zai", taken=taken - {"zai"}) is None
+    assert "exists" in str(name_problem(name="work", taken=taken - {"zai"}))

@@ -11,13 +11,12 @@ from textual.widgets import DataTable
 
 from claude_code_env_editor import config
 from claude_code_env_editor.profiles import (
-    NAME_PATTERN,
     Profile,
     ProfileError,
     load_profiles,
+    name_problem,
     rename_profile,
     save_profile,
-    similar_name,
 )
 from claude_code_env_editor.tui.dialogs import InputScreen, TextScreen
 from claude_code_env_editor.tui.pages.profile_actions import ProfileActionsPage
@@ -134,11 +133,7 @@ class ProfileListPage(ProfileActionsPage):
 
         def check_name(text: str) -> str | None:
             """Return a message when the name is not usable."""
-            if not NAME_PATTERN.match(text):
-                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            if text in existing or similar_name(name=text, names=existing) is not None:
-                return f"A profile named '{text}' exists. Use another name."
-            return None
+            return name_problem(name=text, taken=existing)
 
         def create(name: str | None) -> None:
             """Save the empty profile and open its variables."""
@@ -196,13 +191,8 @@ class ProfileListPage(ProfileActionsPage):
         existing: set[str] = set(self.profiles)
 
         def check_name(text: str) -> str | None:
-            """Return a message when the new name is not usable."""
-            if not NAME_PATTERN.match(text):
-                return "Use letters, digits, '.', '-', and '_'. Start with a letter or a digit."
-            others: set[str] = existing - {name}
-            if text in others or similar_name(name=text, names=others) is not None:
-                return f"A profile named '{text}' exists. Use another name."
-            return None
+            """Return a message when the new name is not usable. The profile may keep its own name."""
+            return name_problem(name=text, taken=existing - {name})
 
         def rename_to(new_name: str | None) -> None:
             """Rename the profile and keep the cursor on it."""
