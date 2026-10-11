@@ -120,6 +120,17 @@ claude-code-env-editor profile apply deepseek --file .claude/settings.local.json
 claude-code-env-editor profile apply deepseek --dry-run        # show the changes, write nothing
 ```
 
+### Erase a settings file
+
+`claude-code-env-editor clear --config-dir ~/.claude-work` removes every known variable from the `env` block of
+one settings file. Use `--file PATH` for any other settings file.
+
+- It lists what it removes, with the keys masked, and asks before it writes (`--yes` skips the question).
+- `--dry-run` shows the list and writes nothing.
+- **Custom variables** in the `env` block and all other settings keys (theme, permissions, hooks) stay.
+- The old file is kept as `settings.json.bak`.
+- A file with no known variable stays as it is, and the tool creates no file.
+
 `apply` shows what it changes and asks before it writes (`--yes` skips the question).
 
 - **Apply replaces.** It sets every variable of the profile and removes every known variable that the

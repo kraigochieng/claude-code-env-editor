@@ -90,6 +90,17 @@ def plan_apply(profile: Profile, current_env: Mapping[str, str]) -> ApplyPlan:
     return ApplyPlan(profile_name=profile.name, changes=changes, custom_kept=custom)
 
 
+def plan_clear(current_env: Mapping[str, str]) -> ApplyPlan:
+    """Work out what erasing a place does: every known variable is removed. Custom variables stay."""
+    changes: list[Change] = [
+        Change(name=spec.name, action="remove", old=current_env[spec.name])
+        for spec in CATALOG
+        if spec.name in current_env
+    ]
+    custom: list[str] = [name for name in current_env if name not in BY_NAME]
+    return ApplyPlan(profile_name="(clear)", changes=changes, custom_kept=custom)
+
+
 def format_plan(plan: ApplyPlan, reveal: bool = False, wrap: bool = False) -> list[str]:
     """Return the lines of a summary. Secrets are masked unless reveal is True.
 
