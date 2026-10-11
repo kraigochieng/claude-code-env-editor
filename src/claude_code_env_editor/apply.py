@@ -104,13 +104,30 @@ def plan_apply(profile: Profile, current_env: Mapping[str, str], mode: Mode = "r
     )
 
 
-def format_plan(plan: ApplyPlan, reveal: bool = False) -> list[str]:
-    """Return the lines of a summary. Secrets are masked unless reveal is True."""
+def format_plan(plan: ApplyPlan, reveal: bool = False, wrap: bool = False) -> list[str]:
+    """Return the lines of a summary. Secrets are masked unless reveal is True.
+
+    With wrap, every change takes up to three short lines (name, value, previous value), so that a long
+    URL fits in a narrow dialog.
+    """
 
     def show(name: str, value: str) -> str:
         return value if reveal else mask(value=value, secret=BY_NAME[name].secret)
 
     lines: list[str] = []
+    if wrap:
+        for change in plan.changes:
+            lines.append(f"  {change.action:<7} {change.name}")
+            if change.action in ("set", "same"):
+                lines.append(f"            {show(change.name, change.new)}")
+            if change.action in ("set", "remove") and change.old:
+                lines.append(f"            was: {show(change.name, change.old)}")
+            if change.action == "keep":
+                lines.append(f"            {change.reason}")
+        for name in plan.custom_kept:
+            lines.append(f"  keep    {name}")
+            lines.append("            custom variable, not touched")
+        return lines
     for change in plan.changes:
         if change.action == "set":
             was: str = f"  (was: {show(change.name, change.old)})" if change.old else ""
