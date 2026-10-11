@@ -1,6 +1,41 @@
 # CHANGELOG
 
 
+## v0.10.0 (2026-10-11)
+
+### Documentation
+
+- Describe profiles as the way to switch provider and refresh screenshots
+  ([`f8f9e9d`](https://github.com/kraigochieng/claude-code-env-editor/commit/f8f9e9dd602340234abea505df5112d9beedabe8))
+
+The README now leads with profiles, names the built-in ones, and says that a profile can hold a copy
+  of the key. The screenshots show the profile list and the apply dialog. The old preset page is
+  removed.
+
+Closes #56
+
+### Features
+
+- **sources**: Add variable sources and profile matching
+  ([`143b301`](https://github.com/kraigochieng/claude-code-env-editor/commit/143b30136d1def97f50e91e2e89ade461c57900e))
+
+A FileSource reads and writes the env block of a settings file. A ProfileSource reads and writes one
+  profile, and a built-in is read-only. matching_profile finds the profile that equals the known
+  variables of a file.
+
+Refs #58
+
+- **tui**: Make the profile list the main page
+  ([`d70f4b1`](https://github.com/kraigochieng/claude-code-env-editor/commit/d70f4b141ad364d3c12c73dabb7c325555479fe1))
+
+The main page lists the profiles with a mark on the one that matches the file, and the banner names
+  it. Enter opens a profile and shows its variables. A profile of yours can be edited and is saved
+  to profiles.toml. A built-in is read-only and c copies it. c on the list opens the current values
+  of the file. The dialogs move to their own module. README and screenshots follow the new layout.
+
+Closes #58
+
+
 ## v0.9.0 (2026-10-11)
 
 ### Features
