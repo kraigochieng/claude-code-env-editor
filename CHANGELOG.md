@@ -1,6 +1,31 @@
 # CHANGELOG
 
 
+## v0.15.0 (2026-10-11)
+
+### Features
+
+- **profiles**: Refuse a name that differs from another only in case
+  ([`6c795d4`](https://github.com/kraigochieng/claude-code-env-editor/commit/6c795d40254a2207441bdf0dc52fc12ea59baecd))
+
+Work and work would be two profiles that look the same. save and rename now refuse such a name. A
+  profile may still change the case of its own name.
+
+Refs #68
+
+- **tui**: Simplify the pages and create a profile from scratch with n
+  ([`39be977`](https://github.com/kraigochieng/claude-code-env-editor/commit/39be9774f4f259a7da1cbcea0b6e65e388ddf573))
+
+n asks for a name, creates an empty profile, and opens it. The right arrow opens a profile and the
+  left arrow goes back. The Applied in and Note columns, the Source column, and the endpoint and
+  auth lines of the profile page are gone. The reveal control moves into the edit box of a key
+  (Ctrl+R), so r is no longer a key of the pages. The template, folder, and copy flows of n are
+  removed from the TUI. The CLI keeps them. Names are checked without case in every box. README and
+  screenshots follow.
+
+Closes #68
+
+
 ## v0.14.0 (2026-10-11)
 
 ### Features
