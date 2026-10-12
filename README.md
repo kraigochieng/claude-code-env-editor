@@ -1,5 +1,10 @@
 # claude-code-env-editor
 
+> **Status: finished, not maintained.** This project is complete and the repository is archived.
+> No one answers issues or reviews pull requests. The last release is
+> [v0.19.1](https://github.com/kraigochieng/claude-code-env-editor/releases/tag/v0.19.1).
+> You can still read the code, install a release, and fork the repository.
+
 A terminal UI to view, edit, verify, and switch the Anthropic variables that Claude Code reads.
 Point Claude Code at another endpoint with one profile, without hand-editing JSON or shell files.
 
@@ -338,6 +343,21 @@ Set your own keys in the environment to run them. The keys are never written to 
 CCEE_LIVE_DEEPSEEK_KEY=... CCEE_LIVE_OPENROUTER_KEY=... .venv/bin/python -m pytest -m live
 ```
 
+
+## What this project taught
+
+The tool is finished. These are the lessons from building it.
+
+- **Test the real tool.** Many facts in this README come from a run of Claude Code against a fake local server.
+  The header that each key variable sends is one example.
+- **Settings have levels.** A value in a higher level of settings can override the `env` block. A tool that edits
+  one file cannot see the other levels.
+- **A built-in feature can replace a tool.** Claude Code has `/model` and `/config`. A new tool must offer more
+  than these features.
+- **Handle secrets with care.** Mask them on screen, write files atomically with mode `0600`, and send a key only
+  to the host that the user set.
+- **Small steps keep a project healthy.** One issue, one branch, and one atomic commit made each change easy to
+  review and to undo.
 
 ## License
 
